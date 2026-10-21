@@ -5,6 +5,14 @@ import { NextResponse, type NextRequest } from 'next/server';
 const PUBLIC_PATHS = ['/login', '/auth', '/api/intake'];
 
 export async function middleware(request: NextRequest) {
+  // Fail with a readable message instead of a crash when Vercel env vars are missing.
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return new NextResponse(
+      'FundOS is not configured: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel (Settings → Environment Variables), then redeploy.',
+      { status: 503, headers: { 'content-type': 'text/plain; charset=utf-8' } },
+    );
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
