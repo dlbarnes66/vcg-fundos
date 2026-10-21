@@ -16,7 +16,7 @@ await db.exec(`
   alter table storage.objects enable row level security;
   create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name, '/') $$;
 `);
-await db.exec(readFileSync(`${root}/supabase/migrations/0001_init.sql`, 'utf8'));
+for (const m of ['0001_init.sql', '0002_crm_handoff.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
 await db.exec(readFileSync(`${root}/supabase/seed.sql`, 'utf8'));
 
 const owner = '11111111-1111-1111-1111-111111111111';
@@ -106,3 +106,54 @@ ok((await as(lpE, 'select * from investors')).rows.length === 1, 'linked LP sees
 threw = false;
 try { await as(owner, `select link_portal_user('${invE}','owner@x.com')`); } catch { threw = true; }
 ok(threw, 'cannot link a staff login as an investor');
+
+// ── CRM OS handoff ──
+await db.exec(`grant usage on schema public to anon; grant all on all tables in schema public to anon;`);
+async function asAnon(sql) {
+  await db.exec(`set role anon; set test.uid = '';`);
+  try { return await db.query(sql); } finally { await db.exec(`reset role;`); }
+}
+const vcgOrg = (await db.query(`select id from organizations where slug='vcg'`)).rows[0].id;
+const otherOrg = (await db.query(`select id from organizations where slug='other'`)).rows[0].id;
+
+threw = false;
+try { await as(lpA, `select create_intake_key('${vcgOrg}','x')`); } catch { threw = true; }
+ok(threw, 'LP cannot create API key');
+threw = false;
+try { await as(other, `select create_intake_key('${vcgOrg}','x')`); } catch { threw = true; }
+ok(threw, 'other org cannot create key for VCG');
+
+const key = (await as(owner, `select create_intake_key('${vcgOrg}','CRM OS') k`)).rows[0].k;
+ok(/^fos_[0-9a-f]{64}$/.test(key), 'key format');
+const stored = (await db.query(`select key_hash, key_prefix from intake_keys`)).rows[0];
+ok(!stored.key_hash.includes(key.slice(4)) && stored.key_prefix === key.slice(0, 12), 'only hash + prefix stored');
+
+threw = false;
+try { await asAnon(`select intake_investor('fos_bad','crm_os','c1','X','x@y.com')`); } catch { threw = true; }
+ok(threw, 'bad key rejected');
+
+const r1 = (await asAnon(`select intake_investor('${key}','crm_os','c-100','New Prospect','New@Prospect.com', null, 'trust', 100000, 'Webinar attendee')  r`)).rows[0].r;
+ok(r1.created === true && r1.stage === 'qualified', 'new lead created at qualified');
+const r2 = (await asAnon(`select intake_investor('${key}','crm_os','c-100','New Prospect','new@prospect.com') r`)).rows[0].r;
+ok(r2.created === false && r2.investor_id === r1.investor_id, 'resend dedupes on external id');
+
+// Existing investor matched by email keeps its stage
+const rC = (await asAnon(`select intake_investor('${key}','crm_os','c-200','Sample Holdings','C@example.com') r`)).rows[0].r;
+ok(rC.created === false && rC.stage === 'docs_sent', 'email match does not move stage');
+
+ok((await as(other, `select * from investors`)).rows.length === 0, 'handoff lands only in key org');
+const acts = (await as(owner, `select count(*)::int n from investor_activities where kind='handoff'`)).rows[0].n;
+ok(acts === 3, 'handoff activity logged');
+
+threw = false;
+try { await asAnon(`select intake_investor('${key}','crm_os','c-300','','')`); } catch { threw = true; }
+ok(threw, 'validation rejects empty name / bad email');
+
+ok((await asAnon(`select * from intake_keys`)).rows.length === 0, 'anon cannot read keys');
+ok((await asAnon(`select * from investors`)).rows.length === 0, 'anon cannot read investors');
+
+const kid = (await db.query(`select id from intake_keys`)).rows[0].id;
+await as(owner, `select revoke_intake_key('${kid}')`);
+threw = false;
+try { await asAnon(`select intake_investor('${key}','crm_os','c-400','Y','y@z.com')`); } catch { threw = true; }
+ok(threw, 'revoked key rejected');

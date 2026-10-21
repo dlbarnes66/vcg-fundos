@@ -1,7 +1,8 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/auth'];
+// /api/intake authenticates with an API key, not a session.
+const PUBLIC_PATHS = ['/login', '/auth', '/api/intake'];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });

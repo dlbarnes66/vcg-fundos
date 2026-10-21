@@ -29,7 +29,7 @@ export async function createInvestor(formData: FormData) {
         phone: str(formData, 'phone'),
         source: str(formData, 'source'),
         target_amount: optAmount(formData, 'target_amount'),
-        stage: 'lead',
+        stage: 'qualified',
       })
       .select('id')
       .single();

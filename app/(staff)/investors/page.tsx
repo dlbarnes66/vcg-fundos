@@ -67,7 +67,10 @@ export default async function InvestorsPage({ searchParams }: { searchParams: Se
 
       {WRITE_ROLES.includes(role) && (
         <form className="card" action={createInvestor}>
-          <h2>Add investor</h2>
+          <h2>Add qualified investor</h2>
+          <p className="muted small" style={{ marginTop: -6 }}>
+            Most investors arrive automatically from CRM OS. Add one here only for direct introductions that never went through marketing.
+          </p>
           <div className="form-grid">
             <label>Name or entity<input name="display_name" required /></label>
             <label>Type

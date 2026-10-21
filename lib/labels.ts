@@ -1,6 +1,6 @@
+// Leads and early contact live in CRM OS. FundOS starts once a prospect is qualified.
+// ('lead' and 'contacted' remain in the database enum for compatibility only.)
 export const STAGES = [
-  ['lead', 'Lead'],
-  ['contacted', 'Contacted'],
   ['qualified', 'Qualified'],
   ['due_diligence', 'Due diligence'],
   ['soft_circled', 'Soft-circled'],
@@ -10,7 +10,8 @@ export const STAGES = [
   ['declined', 'Declined'],
 ] as const;
 export type Stage = (typeof STAGES)[number][0];
-export const stageLabel = (s: string) => STAGES.find(([k]) => k === s)?.[1] ?? s;
+const LEGACY_STAGES: Record<string, string> = { lead: 'Lead', contacted: 'Contacted' };
+export const stageLabel = (s: string) => STAGES.find(([k]) => k === s)?.[1] ?? LEGACY_STAGES[s] ?? s;
 
 export const INVESTOR_TYPES = [
   ['individual', 'Individual'],

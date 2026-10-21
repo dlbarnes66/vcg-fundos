@@ -9,7 +9,7 @@ Internal fund-management platform for Venture Collective Group, built multi-tena
 | Area | What it does |
 |---|---|
 | **Dashboard** | Committed vs. $10M target, pipeline value, contributed/unfunded, distributions, follow-ups due, 506(c) accreditation gaps, fund terms |
-| **Investor pipeline** | Kanban from lead → funded, search, add investors, target amounts, follow-up dates |
+| **Investor pipeline** | Kanban from qualified → funded (earlier stages live in CRM OS), search, add investors, target amounts, follow-up dates |
 | **Investor detail** | Profile, stage, accreditation (status, verified/expiry dates), activity log, commitments, capital activity, pref estimate, portal access |
 | **Capital activity** | Capital accounts per investor, post contributions/distributions/returns of capital/fees, reversals with a required reason |
 | **Data room** | Private uploads with three visibility levels (internal / all investors / one investor), signed 60-second links, open counts |
@@ -28,7 +28,7 @@ Internal fund-management platform for Venture Collective Group, built multi-tena
 ## Setup (about 15 minutes)
 
 1. **Create a new Supabase project** for this app. Don't reuse the vcgnow portal project; keep investor financial data separate.
-2. **Run the schema.** Supabase → SQL Editor → paste `supabase/migrations/0001_init.sql` → Run. Then paste and run `supabase/seed.sql` (this only defines the demo function).
+2. **Run the schema.** Supabase → SQL Editor → run each file in `supabase/migrations/` in order (`0001_init.sql`, then `0002_crm_handoff.sql`). Then run `supabase/seed.sql` (this only defines the demo function).
 3. **Create your login.** Authentication → Users → Add user (email + password, auto-confirm).
 4. **Make yourself owner.** In the SQL editor:
    ```sql
@@ -57,12 +57,32 @@ Internal fund-management platform for Venture Collective Group, built multi-tena
 - Upgrade the Supabase project to a paid plan for daily backups and point-in-time recovery.
 - Keep the fund's official books with your CPA or fund administrator. This app is the investor-level record that reconciles to them, not a replacement.
 
+## CRM OS handoff
+
+CRM OS (crm.vcgnow.com) owns marketing: lead capture, campaigns, nurture. FundOS owns everything from **Qualified** onward. There's one pipeline per stage of the journey, with no double tracking.
+
+1. In FundOS go to **Settings → Create API key**. Copy the key, which is shown once.
+2. In CRM OS's Vercel project, add the environment variables `FUNDOS_API_KEY` (the key) and `FUNDOS_URL` (your FundOS domain).
+3. When a contact in CRM OS's Fund workspace is marked qualified, CRM OS calls:
+
+```bash
+curl -X POST "$FUNDOS_URL/api/intake" \
+  -H "Authorization: Bearer $FUNDOS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Jane Smith","email":"jane@example.com","external_id":"crm-contact-123","target_amount":100000,"note":"Asked for the PPM"}'
+```
+
+- New contact → investor created at **Qualified**, returns `201`.
+- Same contact sent again (matched by `external_id`, then email) → no duplicate, stage untouched, returns `200`.
+- Each handoff is logged on the investor's activity timeline.
+- Only a SHA-256 hash of the key is stored. Revoke a key in Settings and calls with it fail immediately.
+
 ## Tests
 
 ```bash
 npm test
 ```
-Runs the pref-return and money unit tests, plus 21 database security tests against an in-memory Postgres: tenant isolation, LP visibility, storage access, append-only capital, reversals, the 506(c) acceptance rule and portal-linking permissions.
+Runs the pref-return and money unit tests, plus 35 database security tests against an in-memory Postgres: tenant isolation, LP visibility, storage access, append-only capital, reversals, the 506(c) acceptance rule, portal-linking permissions and the CRM OS handoff (keys, dedupe, revocation).
 
 ## Deploying
 

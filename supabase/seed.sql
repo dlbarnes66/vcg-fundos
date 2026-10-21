@@ -28,7 +28,7 @@ begin
     (org, 'Sample Family Trust B',    'trust',      'b@example.com', 'committed',     'verified',    'Event',      250000, current_date + 7),
     (org, 'Sample Holdings LLC C',    'llc',        'c@example.com', 'docs_sent',     'pending',     'LinkedIn',   150000, current_date + 2),
     (org, 'Sample Investor D',        'individual', 'd@example.com', 'soft_circled',  'not_started', 'Website',    75000,  current_date + 5),
-    (org, 'Sample Investor E',        'ira',        'e@example.com', 'contacted',     'not_started', 'Webinar',    50000,  current_date - 1);
+    (org, 'Sample Investor E',        'ira',        'e@example.com', 'qualified',     'not_started', 'Webinar',    50000,  current_date - 1);
 
   select id into i1 from investors where organization_id = org and email = 'a@example.com';
   select id into i2 from investors where organization_id = org and email = 'b@example.com';
