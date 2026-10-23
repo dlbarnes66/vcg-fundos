@@ -9,20 +9,20 @@ const ok = (c, m) => { if (!c) { console.error('FAIL:', m); process.exitCode = 1
 await db.exec(`
   create role anon; create role authenticated;
   create schema auth; create schema storage;
-  create table auth.users (id uuid primary key, email text);
+  create table auth.users (id uuid primary key, email text, last_sign_in_at timestamptz);
   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
   create table storage.buckets (id text primary key, name text, public boolean);
   create table storage.objects (id uuid default gen_random_uuid(), bucket_id text, name text);
   alter table storage.objects enable row level security;
   create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name, '/') $$;
 `);
-for (const m of ['0001_init.sql', '0002_crm_handoff.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
+for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
 await db.exec(readFileSync(`${root}/supabase/seed.sql`, 'utf8'));
 
 const owner = '11111111-1111-1111-1111-111111111111';
 const lpA = '22222222-2222-2222-2222-222222222222';
 const other = '33333333-3333-3333-3333-333333333333';
-await db.exec(`insert into auth.users values ('${owner}','owner@x.com'),('${lpA}','a@example.com'),('${other}','other@y.com');`);
+await db.exec(`insert into auth.users (id,email) values ('${owner}','owner@x.com'),('${lpA}','a@example.com'),('${other}','other@y.com');`);
 await db.exec(`select bootstrap_owner('owner@x.com'); select seed_demo('vcg');`);
 await db.exec(`select bootstrap_owner('other@y.com','Other Co','other');`);
 await db.exec(`
@@ -96,7 +96,7 @@ ok(threw, 'cannot flip pending to accepted while unverified');
 
 // Portal linking: only owner/admin, and not onto staff accounts
 const lpE = '44444444-4444-4444-4444-444444444444';
-await db.exec(`insert into auth.users values ('${lpE}','e@example.com')`);
+await db.exec(`insert into auth.users (id,email) values ('${lpE}','e@example.com')`);
 const invE = (await db.query(`select id from investors where email='e@example.com'`)).rows[0].id;
 threw = false;
 try { await as(lpA, `select link_portal_user('${invE}','e@example.com')`); } catch { threw = true; }
@@ -157,3 +157,43 @@ await as(owner, `select revoke_intake_key('${kid}')`);
 threw = false;
 try { await asAnon(`select intake_investor('${key}','crm_os','c-400','Y','y@z.com')`); } catch { threw = true; }
 ok(threw, 'revoked key rejected');
+
+// ── Team management ──
+const ir = '55555555-5555-5555-5555-555555555555';
+const adm = '66666666-6666-6666-6666-666666666666';
+await db.exec(`insert into auth.users (id,email) values ('${ir}','ir@x.com'),('${adm}','admin@x.com')`);
+await as(owner, `select add_staff_member('${vcgOrg}','IR@x.com','investor_relations')`);
+await as(owner, `select add_staff_member('${vcgOrg}','admin@x.com','admin')`);
+const team = (await as(owner, `select * from org_members('${vcgOrg}')`)).rows;
+ok(team.length === 3 && team.every((m) => m.role !== 'investor'), 'org_members lists staff only, with emails');
+threw = false; try { await as(ir, `select * from org_members('${vcgOrg}')`); } catch { threw = true; }
+ok(threw, 'IR cannot list team');
+threw = false; try { await as(adm, `select add_staff_member('${vcgOrg}','other@y.com','admin')`); } catch { threw = true; }
+ok(threw, 'admin cannot grant admin');
+threw = false; try { await as(other, `select add_staff_member('${vcgOrg}','other@y.com','viewer')`); } catch { threw = true; }
+ok(threw, 'other org cannot add to VCG');
+threw = false; try { await as(owner, `select add_staff_member('${vcgOrg}','a@example.com','viewer')`); } catch { threw = true; }
+ok(threw, 'investor login cannot become staff');
+threw = false; try { await as(adm, `select set_member_role('${vcgOrg}','${ir}','admin')`); } catch { threw = true; }
+ok(threw, 'admin cannot change roles');
+threw = false; try { await as(owner, `select set_member_role('${vcgOrg}','${owner}','viewer')`); } catch { threw = true; }
+ok(threw, 'last owner cannot be demoted');
+threw = false; try { await as(owner, `select remove_member('${vcgOrg}','${owner}')`); } catch { threw = true; }
+ok(threw, 'last owner cannot be removed');
+await as(owner, `select remove_member('${vcgOrg}','${lpE}')`);
+const unlinked = (await db.query(`select portal_user_id from investors where email='e@example.com'`)).rows[0];
+ok(unlinked.portal_user_id === null, 'removing an investor login unlinks the portal');
+ok((await as(lpE, 'select * from investors')).rows.length === 0, 'removed investor sees nothing');
+threw = false; try { await as(ir, `select user_exists('${vcgOrg}','x@y.com')`); } catch { threw = true; }
+ok(threw, 'IR cannot probe which emails have accounts');
+const pe = (await as(owner, `select portal_email(id) e from investors where email='a@example.com'`)).rows[0].e;
+ok(pe === 'a@example.com', 'portal_email for owner');
+threw = false; try { await as(lpA, `select portal_email(id) from investors where email='a@example.com'`); } catch { threw = true; }
+ok(threw, 'LP cannot call portal_email');
+
+// Fund edits are owner/admin only
+threw = false; try { await as(ir, `update funds set target_size = 1`); } catch { threw = true; }
+const tgt = (await db.query(`select target_size from funds limit 1`)).rows[0].target_size;
+ok(Number(tgt) === 10000000, 'IR cannot change fund terms');
+await as(owner, `update funds set pref_rate = 0.0725`);
+ok((await db.query(`select count(*)::int n from audit_events where target_table='funds' and action='update'`)).rows[0].n === 1, 'fund term change is audited');

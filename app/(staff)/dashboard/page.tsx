@@ -40,8 +40,9 @@ export default async function Dashboard() {
       <div>
         <h1>{fund?.name ?? orgName}</h1>
         <p className="sub" style={{ marginBottom: 0 }}>
-          {fund ? `${fund.offering_type} · ${stageOrStatus(fund.status)}` : 'No fund set up yet. Run seed_demo or insert a fund.'}
+          {fund ? `${fund.offering_type} · ${stageOrStatus(fund.status)}` : 'No fund set up yet.'}
         </p>
+        {!fund && <Link href="/funds/new" className="btn" style={{ marginTop: 12 }}>Create your first fund</Link>}
       </div>
 
       <div className="grid g4">
@@ -105,7 +106,7 @@ export default async function Dashboard() {
 
       {fund && (
         <div className="card">
-          <h2>Fund terms</h2>
+          <div className="row between"><h2>Fund terms</h2><Link href={`/funds/${fund.id}`} className="small">Edit terms →</Link></div>
           <div className="grid g4 small">
             <Term k="Target size" v={fmtMoney(fund.target_size, true)} />
             <Term k="Minimum" v={fmtMoney(fund.min_commitment, true)} />
@@ -118,7 +119,7 @@ export default async function Dashboard() {
           </div>
           {(!terms.gp_catch_up || !terms.carry_split) && (
             <p className="note" style={{ marginTop: 14, marginBottom: 0 }}>
-              Catch-up and carry split are blank. Copy them from the PPM into <code>funds.terms</code> before building distribution waterfalls.
+              Catch-up and carry split are blank. <Link href={`/funds/${fund.id}`}>Add them from the PPM</Link> before building distribution waterfalls.
             </p>
           )}
         </div>

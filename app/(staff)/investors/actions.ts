@@ -5,6 +5,7 @@ import { requireRole, WRITE_ROLES, CAPITAL_ROLES } from '@/lib/session';
 import { parseAmount } from '@/lib/money';
 import { back, errorText } from '@/lib/flash';
 import { STAGES, stageLabel } from '@/lib/labels';
+import { signInLink, sendInviteEmail, type InviteState } from '@/lib/invite';
 
 const str = (f: FormData, k: string) => {
   const v = String(f.get(k) ?? '').trim();
@@ -154,16 +155,38 @@ export async function setCommitmentStatus(investorId: string, commitmentId: stri
   back(`/investors/${investorId}`, err ? 'error' : 'ok', err ?? `Commitment ${status}.`);
 }
 
-export async function linkPortal(investorId: string, formData: FormData) {
-  let err: string | undefined;
+/** Invite an investor to the portal: create their login link, link it to this record, email it (or return it to copy). */
+export async function invitePortal(investorId: string, _prev: InviteState, formData: FormData): Promise<InviteState> {
   try {
-    const { supabase } = await requireRole(CAPITAL_ROLES);
-    const email = str(formData, 'email');
-    if (!email) throw new Error('Email is required');
+    const { supabase, orgId, orgName } = await requireRole(CAPITAL_ROLES);
+    const email = String(formData.get('email') ?? '').trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: 'Enter a valid email address.' };
+
+    const { url, isNew } = await signInLink(supabase, orgId, email);
     const { error } = await supabase.rpc('link_portal_user', { p_investor_id: investorId, p_email: email });
     if (error) throw error;
+
+    revalidatePath(`/investors/${investorId}`);
+    const sent = await sendInviteEmail({ to: email, orgName, url, forInvestor: true, isNew }).catch(() => false);
+    return sent
+      ? { ok: `Portal invite emailed to ${email}.` }
+      : { ok: `Portal access granted. Email isn't set up yet, so send ${email} this one-time link yourself:`, link: url };
   } catch (e) {
-    err = errorText(e);
+    return { error: errorText(e) };
   }
-  back(`/investors/${investorId}`, err ? 'error' : 'ok', err ?? 'Portal access granted.');
+}
+
+/** Fresh sign-in link for an investor who already has portal access. */
+export async function sendPortalLink(investorId: string, _prev: InviteState): Promise<InviteState> {
+  try {
+    const { supabase, orgId, orgName } = await requireRole(CAPITAL_ROLES);
+    const { data: email, error: e1 } = await supabase.rpc('portal_email', { p_investor_id: investorId });
+    if (e1) throw e1;
+    if (!email) return { error: 'This investor has no portal login yet.' };
+    const { url } = await signInLink(supabase, orgId, email as string);
+    const sent = await sendInviteEmail({ to: email as string, orgName, url, forInvestor: true, isNew: false }).catch(() => false);
+    return sent ? { ok: `Sign-in link emailed to ${email}.` } : { ok: `Send ${email} this one-time link:`, link: url };
+  } catch (e) {
+    return { error: errorText(e) };
+  }
 }

@@ -10,9 +10,11 @@ export default async function StaffLayout({ children }: { children: React.ReactN
       <nav className="side">
         <div className="brand"><span className="brand-mark">VCG</span> FundOS</div>
         <Link href="/dashboard">Dashboard</Link>
+        <Link href="/funds">Funds</Link>
         <Link href="/investors">Investor pipeline</Link>
         <Link href="/capital">Capital activity</Link>
         <Link href="/documents">Data room</Link>
+        <Link href="/team">Team</Link>
         <Link href="/settings">Settings</Link>
         <div className="spacer" />
         <div className="who">{user.email}<br />{orgName} · {ROLE_LABELS[role]}</div>

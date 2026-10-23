@@ -28,7 +28,7 @@ Internal fund-management platform for Venture Collective Group, built multi-tena
 ## Setup (about 15 minutes)
 
 1. **Create a new Supabase project** for this app. Don't reuse the vcgnow portal project; keep investor financial data separate.
-2. **Run the schema.** Supabase → SQL Editor → run each file in `supabase/migrations/` in order (`0001_init.sql`, then `0002_crm_handoff.sql`). Then run `supabase/seed.sql` (this only defines the demo function).
+2. **Run the schema.** Supabase → SQL Editor → run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_crm_handoff.sql`, `0003_team_and_funds.sql`). Then run `supabase/seed.sql` (this only defines the demo function).
 3. **Create your login.** Authentication → Users → Add user (email + password, auto-confirm).
 4. **Make yourself owner.** In the SQL editor:
    ```sql
@@ -45,13 +45,19 @@ Internal fund-management platform for Venture Collective Group, built multi-tena
 
 ### Adding people
 
-- **Team member:** invite them in Supabase Auth, then in SQL:
-  `insert into memberships (organization_id, user_id, role) select o.id, u.id, 'investor_relations' from organizations o, auth.users u where o.slug='vcg' and u.email='them@example.com';`
-- **Investor (LP):** invite them in Supabase Auth, then open their record in the app → *Investor portal access* → enter their email.
+Invites need `SUPABASE_SERVICE_ROLE_KEY` in Vercel (type **Secret**). Email delivery is optional: with `RESEND_API_KEY` and `MAIL_FROM` set, invites are emailed; without them, FundOS shows a one-time link for you to send.
+
+- **Team member:** **Team** → enter their email and a role → **Send invite**. Owners can grant any role; admins can add Investor relations or Viewer.
+- **Investor (LP):** open their investor record → **Investor portal access** → **Invite to portal**.
+- They open the link, set a password, and they're in. Links work once and expire in about an hour; use **Send sign-in link** for a fresh one (also how someone resets a forgotten password).
+
+### Fund setup
+
+**Funds** → **New fund**, or open a fund to edit its terms. Rates are entered as percentages (7 = 7%). Every change is recorded in the audit log.
 
 ### Before real investor data goes in
 
-- Fill in `gp_catch_up` and `carry_split` in the fund's `terms` from the PPM. They are blank on purpose.
+- Fill in the GP catch-up and carry split on the fund's page (**Funds** → your fund) from the PPM. They are blank on purpose.
 - Delete the demo data, or start a fresh project.
 - Turn on MFA for staff accounts (Supabase Auth → MFA) and use a strong password policy.
 - Upgrade the Supabase project to a paid plan for daily backups and point-in-time recovery.
@@ -82,7 +88,7 @@ curl -X POST "$FUNDOS_URL/api/intake" \
 ```bash
 npm test
 ```
-Runs the pref-return and money unit tests, plus 35 database security tests against an in-memory Postgres: tenant isolation, LP visibility, storage access, append-only capital, reversals, the 506(c) acceptance rule, portal-linking permissions and the CRM OS handoff (keys, dedupe, revocation).
+Runs the pref-return and money unit tests, plus 50 database security tests against an in-memory Postgres: tenant isolation, LP visibility, storage access, append-only capital, reversals, the 506(c) acceptance rule, portal-linking permissions and the CRM OS handoff (keys, dedupe, revocation), team roles and fund-term permissions.
 
 ## Deploying
 

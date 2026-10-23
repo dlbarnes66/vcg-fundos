@@ -3,6 +3,8 @@ import { signIn } from './actions';
 const MESSAGES: Record<string, string> = {
   invalid: 'Email or password is incorrect.',
   'no-access': 'Your account is not linked to an organization yet. Ask the fund owner to add you.',
+  expired: 'That link has expired or was already used. Ask the fund manager to send a new one.',
+  link: 'That sign-in link is incomplete. Try opening it again from the email.',
 };
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {

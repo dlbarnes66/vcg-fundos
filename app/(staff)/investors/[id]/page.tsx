@@ -6,7 +6,8 @@ import { STAGES, INVESTOR_TYPES, ACCREDITATION, txnLabel } from '@/lib/labels';
 import { fmtMoney } from '@/lib/money';
 import { Flash } from '@/lib/flash';
 import { prefEstimate, type CapitalEvent } from '@/lib/pref';
-import { updateInvestor, addActivity, addCommitment, setCommitmentStatus, linkPortal } from '../actions';
+import { updateInvestor, addActivity, addCommitment, setCommitmentStatus, invitePortal, sendPortalLink } from '../actions';
+import { InviteForm } from '@/app/invite-result';
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; error?: string }> };
 
@@ -172,18 +173,27 @@ export default async function InvestorPage({ params, searchParams }: Props) {
         </table></div>
       </div>
 
-      {canCapital && !inv.portal_user_id && (
-        <form className="card" action={linkPortal.bind(null, id)}>
+      {canCapital && (
+        <div className="card">
           <h2>Investor portal access</h2>
-          <p className="muted small" style={{ marginTop: -6 }}>
-            First invite them in Supabase (Authentication → Users → Invite user). Then link their login here.
-            They will see only their own commitments, capital activity and the documents you share with them.
-          </p>
-          <div className="form-grid">
-            <label>Login email<input name="email" type="email" defaultValue={inv.email ?? ''} required /></label>
-            <button type="submit">Grant portal access</button>
-          </div>
-        </form>
+          {inv.portal_user_id ? (
+            <>
+              <p className="muted small" style={{ marginTop: -6 }}>
+                This investor can sign in to the portal and sees only their own commitments, capital activity and the documents you share with them.
+              </p>
+              <InviteForm action={sendPortalLink.bind(null, id)} submitLabel="Send a new sign-in link" className="row" />
+            </>
+          ) : (
+            <>
+              <p className="muted small" style={{ marginTop: -6 }}>
+                Sends a one-time link. They set a password, then see only their own commitments, capital activity and shared documents.
+              </p>
+              <InviteForm action={invitePortal.bind(null, id)} submitLabel="Invite to portal">
+                <label>Their email<input name="email" type="email" defaultValue={inv.email ?? ''} required /></label>
+              </InviteForm>
+            </>
+          )}
+        </div>
       )}
     </div>
   );
