@@ -75,6 +75,49 @@ export function FundForm({
           <label style={{ marginTop: 12 }}>Other terms / notes<textarea name="terms_notes" defaultValue={t.notes ?? ''} /></label>
         </div>
 
+        <div className="card">
+          <h2>Legal profile (for Document Studio)</h2>
+          <p className="muted small" style={{ marginTop: -6 }}>
+            These are the only facts the document drafts use. Leave anything you don&apos;t know blank: it gets flagged as missing for you or counsel, never made up.
+          </p>
+          <div className="form-grid">
+            <label>Legal structure
+              <select name="legal_structure" defaultValue={t.legal_structure ?? ''}>
+                <option value="">Not set</option>
+                <option value="limited_partnership">Limited partnership (GP/LP)</option>
+                <option value="llc">LLC (manager/members)</option>
+                <option value="master_feeder">Master-feeder</option>
+              </select>
+            </label>
+            <label>State of formation<input name="formation_state" defaultValue={t.formation_state ?? ''} placeholder="Delaware" /></label>
+            <label>Fund legal name<input name="fund_entity" defaultValue={t.fund_entity ?? ''} placeholder="VCG Veterans Housing Fund I, LP" /></label>
+            <label>General partner / managing member<input name="gp_entity" defaultValue={t.gp_entity ?? ''} /></label>
+            <label>Investment manager<input name="manager_entity" defaultValue={t.manager_entity ?? ''} placeholder="Venture Collective Group, LLC" /></label>
+            <label>Securities exemption
+              <select name="exemption" defaultValue={t.exemption ?? ''}>
+                <option value="">Not decided (counsel to advise)</option>
+                <option value="506c">Reg D Rule 506(c)</option>
+                <option value="506b">Reg D Rule 506(b)</option>
+                <option value="other">Other (see notes)</option>
+              </select>
+            </label>
+            <label>Fund counsel<input name="fund_counsel" defaultValue={t.fund_counsel ?? ''} /></label>
+            <label>Fund administrator<input name="administrator" defaultValue={t.administrator ?? ''} placeholder="Leave blank if none" /></label>
+            <label>Auditor / CPA<input name="auditor" defaultValue={t.auditor ?? ''} /></label>
+          </div>
+          <div className="grid g2" style={{ marginTop: 12 }}>
+            <label>Investment strategy<textarea name="strategy" defaultValue={t.strategy ?? ''} placeholder="What the fund buys, how it creates value, the veteran-housing mandate, HUD-VASH approach…" /></label>
+            <label>Principals &amp; key people<textarea name="principals" defaultValue={t.principals ?? ''} placeholder="Names, roles, relevant experience (facts only)" /></label>
+            <label>Target markets / asset types<textarea name="target_markets" defaultValue={t.target_markets ?? ''} placeholder="Multifamily primary; single-family and duplexes secondary; regions…" /></label>
+            <label>Leverage policy<textarea name="leverage_policy" defaultValue={t.leverage_policy ?? ''} placeholder="Target and maximum loan-to-value, recourse, etc." /></label>
+            <label>Investor eligibility<textarea name="investor_eligibility" defaultValue={t.investor_eligibility ?? ''} placeholder="Accredited investors only; verification method…" /></label>
+            <label>Term &amp; extensions<textarea name="term_extension" defaultValue={t.term_extension ?? ''} placeholder="e.g. 7 years plus up to two 1-year extensions at GP discretion" /></label>
+            <label>Capital calls &amp; defaults<textarea name="capital_call_terms" defaultValue={t.capital_call_terms ?? ''} placeholder="Notice period, funded at close vs. called, default remedies" /></label>
+            <label>Transfers &amp; redemptions<textarea name="transfer_redemption" defaultValue={t.transfer_redemption ?? ''} placeholder="GP consent for transfers; no redemptions…" /></label>
+          </div>
+          <label style={{ marginTop: 12 }}>Other facts counsel should know<textarea name="other_disclosures" defaultValue={t.other_disclosures ?? ''} placeholder="Affiliated parties, conflicts, prior funds, litigation (or none)…" /></label>
+        </div>
+
         {canEdit && <div><button type="submit">{submitLabel}</button></div>}
       </fieldset>
       {!canEdit && <p className="muted small">Only an owner or admin can change fund terms.</p>}

@@ -16,7 +16,7 @@ await db.exec(`
   alter table storage.objects enable row level security;
   create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name, '/') $$;
 `);
-for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
+for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
 await db.exec(readFileSync(`${root}/supabase/seed.sql`, 'utf8'));
 
 const owner = '11111111-1111-1111-1111-111111111111';
@@ -197,3 +197,28 @@ const tgt = (await db.query(`select target_size from funds limit 1`)).rows[0].ta
 ok(Number(tgt) === 10000000, 'IR cannot change fund terms');
 await as(owner, `update funds set pref_rate = 0.0725`);
 ok((await db.query(`select count(*)::int n from audit_events where target_table='funds' and action='update'`)).rows[0].n === 1, 'fund term change is audited');
+
+// ── Document Studio ──
+const fundRow = (await db.query(`select id from funds where organization_id='${vcgOrg}' limit 1`)).rows[0];
+const dId = (await as(owner, `insert into doc_drafts (organization_id,fund_id,kind,terms_snapshot,created_by) values ('${vcgOrg}','${fundRow.id}','ppm','{}','${owner}') returning id`)).rows[0].id;
+await as(owner, `insert into doc_sections (organization_id,draft_id,position,key,heading,content) values ('${vcgOrg}','${dId}',0,'cover','Cover','Text')`);
+ok((await as(ir, `select * from doc_drafts`)).rows.length === 1, 'IR can read drafts');
+threw = false; try { await as(ir, `update doc_sections set content='x'`); } catch { threw = true; }
+ok((await db.query(`select content from doc_sections`)).rows[0].content === 'Text', 'IR cannot edit drafts');
+ok((await as(lpA, `select * from doc_drafts`)).rows.length === 0, 'investors never see drafts');
+ok((await as(other, `select * from doc_sections`)).rows.length === 0, 'other org cannot see drafts');
+threw = false; try { await as(adm, `update doc_drafts set status='approved', approved_by_name='X', approved_at=now() where id='${dId}'`); } catch { threw = true; }
+ok(threw, 'admin cannot record counsel approval');
+threw = false; try { await as(owner, `update doc_drafts set status='approved' where id='${dId}'`); } catch { threw = true; }
+ok(threw, 'approval requires counsel name and date');
+await as(owner, `update doc_drafts set status='approved', approved_by_name='Jane Doe, Savvi', approved_at=now() where id='${dId}'`);
+threw = false; try { await as(owner, `update doc_sections set content='changed' where draft_id='${dId}'`); } catch { threw = true; }
+ok(threw, 'approved version sections are locked');
+threw = false; try { await as(owner, `update doc_drafts set approved_by_name='Someone else' where id='${dId}'`); } catch { threw = true; }
+ok(threw, 'approval record cannot be altered');
+await as(owner, `update doc_drafts set status='superseded' where id='${dId}'`);
+ok((await db.query(`select status from doc_drafts where id='${dId}'`)).rows[0].status === 'superseded', 'approved version can be superseded');
+threw = false; try { await as(owner, `delete from doc_drafts where id='${dId}'`); } catch { threw = true; }
+ok((await db.query(`select count(*)::int n from doc_drafts`)).rows[0].n === 1, 'superseded/approved versions cannot be deleted');
+threw = false; try { await as(owner, `insert into doc_checks (organization_id,fund_id,sources,findings,created_by) values ('${vcgOrg}','${fundRow.id}','[]','[]','${adm}')`); } catch { threw = true; }
+ok(threw, 'check must be recorded as the caller');

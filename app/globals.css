@@ -106,3 +106,14 @@ button.danger { background: transparent; color: var(--bad); border: 1px solid #e
 /* Auth */
 .auth { min-height: 100vh; display: grid; place-items: center; background: var(--navy); padding: 16px; }
 .auth .card { width: 100%; max-width: 380px; }
+
+/* Document Studio */
+.doc { margin-top: 12px; font-size: .93rem; line-height: 1.6; }
+.doc h3, .doc h4, .doc h5 { margin: 18px 0 6px; font-size: 1rem; }
+.doc p { margin: 0 0 10px; }
+.doc ul, .doc ol { margin: 0 0 10px; padding-left: 22px; }
+.doc table.md { margin: 8px 0 14px; }
+.doc table.md th, .doc table.md td { border: 1px solid var(--line); text-transform: none; letter-spacing: 0; font-size: .88rem; }
+mark.marker { padding: 1px 5px; border-radius: 4px; font-size: .85em; font-weight: 600; }
+mark.marker.missing { background: #fde68a; color: #6b4a00; }
+mark.marker.counsel { background: #dbeafe; color: #1e3a8a; }
