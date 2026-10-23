@@ -16,21 +16,27 @@ export async function getSession() {
 
   const { data: membership } = await supabase
     .from('memberships')
-    .select('organization_id, role, organizations(name, require_staff_mfa)')
+    .select('organization_id, role, organizations(name)')
     .eq('user_id', user.id)
     .limit(1)
     .maybeSingle();
 
   if (!membership) redirect('/login?error=no-access');
 
-  const org = membership.organizations as unknown as { name: string; require_staff_mfa: boolean } | null;
+  const org = membership.organizations as unknown as { name: string } | null;
+  // Read separately so sign-in never breaks if this setting's database update hasn't been applied yet.
+  const { data: mfaSetting } = await supabase
+    .from('organizations')
+    .select('require_staff_mfa')
+    .eq('id', membership.organization_id)
+    .maybeSingle();
   return {
     supabase,
     user,
     orgId: membership.organization_id as string,
     orgName: org?.name ?? '',
     role: membership.role as Role,
-    requireStaffMfa: Boolean(org?.require_staff_mfa),
+    requireStaffMfa: Boolean((mfaSetting as { require_staff_mfa?: boolean } | null)?.require_staff_mfa),
   };
 }
 
