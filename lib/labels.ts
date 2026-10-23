@@ -57,4 +57,5 @@ export const ROLE_LABELS: Record<string, string> = {
   investor_relations: 'Investor relations',
   viewer: 'Viewer',
   investor: 'Investor',
+  counsel: 'Outside counsel',
 };

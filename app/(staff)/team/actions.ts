@@ -6,7 +6,7 @@ import { back, errorText } from '@/lib/flash';
 import { signInLink, sendInviteEmail, type InviteState } from '@/lib/invite';
 import { adminClient } from '@/lib/supabase/admin';
 
-const STAFF: Role[] = ['owner', 'admin', 'investor_relations', 'viewer'];
+const STAFF: Role[] = ['owner', 'admin', 'investor_relations', 'viewer', 'counsel'];
 const emailOf = (f: FormData) => String(f.get('email') ?? '').trim().toLowerCase();
 const validEmail = (e: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) && e.length <= 254;
 

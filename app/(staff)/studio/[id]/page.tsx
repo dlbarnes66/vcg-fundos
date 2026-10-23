@@ -8,6 +8,7 @@ import { aiReady } from '@/lib/ai';
 import { Flash } from '@/lib/flash';
 import { generateSection, saveSection, sendToCounsel, recordApproval, deleteDraft, createVersion } from '../actions';
 import { GenerateAll, RegenerateOne } from '../generate-buttons';
+import { Thread, type Comment } from '@/app/comments/thread';
 
 export const maxDuration = 300;
 
@@ -25,6 +26,8 @@ export default async function DraftPage({ params, searchParams }: Props) {
     supabase.from('doc_sections').select('*').eq('draft_id', id).order('position'),
     supabase.from('funds').select('id, name').eq('id', draft.fund_id).single(),
   ]);
+  const { data: comments } = await supabase.from('doc_comments').select('id, section_id, author_email, body, resolved_at, created_at').eq('draft_id', id).order('created_at');
+  const openComments = (comments ?? []).filter((c) => !c.resolved_at).length;
   const spec = docSpec(draft.kind)!;
   const locked = draft.status === 'approved' || draft.status === 'superseded';
   const editable = canEdit && !locked;
@@ -38,7 +41,7 @@ export default async function DraftPage({ params, searchParams }: Props) {
       <div>
         <Link href={`/studio?fund=${draft.fund_id}`} className="small">← Document Studio</Link>
         <h1 style={{ marginTop: 8 }}>{spec.title} <span className="muted" style={{ fontWeight: 400 }}>v{draft.version}</span></h1>
-        <p className="sub" style={{ marginBottom: 0 }}>{fund?.name} · {drafted} of {secs.length} sections drafted · {todo.length} open item(s)</p>
+        <p className="sub" style={{ marginBottom: 0 }}>{fund?.name} · {drafted} of {secs.length} sections drafted · {todo.length} open item(s){openComments ? ` · ${openComments} open comment(s)` : ''}</p>
       </div>
       <Flash ok={sp.ok} error={sp.error} />
 
@@ -144,6 +147,7 @@ export default async function DraftPage({ params, searchParams }: Props) {
             ) : (
               <p className="muted small">Not drafted yet.</p>
             )}
+            <Thread comments={((comments ?? []) as Comment[]).filter((c) => c.section_id === s.id)} draftId={id} sectionId={s.id} back={`/studio/${id}`} canComment={canEdit && !locked} />
           </div>
         );
       })}

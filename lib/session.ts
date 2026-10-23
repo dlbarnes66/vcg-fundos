@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 
-export type Role = 'owner' | 'admin' | 'investor_relations' | 'viewer' | 'investor';
+export type Role = 'owner' | 'admin' | 'investor_relations' | 'viewer' | 'investor' | 'counsel';
 
 export const STAFF_ROLES: Role[] = ['owner', 'admin', 'investor_relations', 'viewer'];
 export const WRITE_ROLES: Role[] = ['owner', 'admin', 'investor_relations'];
@@ -60,5 +60,12 @@ export async function requireRole(roles: Role[]) {
   if (aal && aal.currentLevel !== 'aal2' && (aal.nextLevel === 'aal2' || (s.requireStaffMfa && STAFF_ROLES.includes(s.role)))) {
     throw new Error('Verify your two-factor code first (sign out and back in).');
   }
+  return s;
+}
+
+/** Outside counsel: Document Studio review only. */
+export async function requireCounsel() {
+  const s = await getSession();
+  if (s.role !== 'counsel') redirect('/');
   return s;
 }

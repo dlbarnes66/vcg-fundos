@@ -17,7 +17,7 @@ await db.exec(`
   alter table storage.objects enable row level security;
   create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name, '/') $$;
 `);
-for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql', '0006_mfa_notify_cleanup.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
+for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql', '0006_mfa_notify_cleanup.sql', '0007_counsel_role.sql', '0008_counsel_review.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
 await db.exec(readFileSync(`${root}/supabase/seed.sql`, 'utf8'));
 
 const owner = '11111111-1111-1111-1111-111111111111';
@@ -320,3 +320,40 @@ await db.exec(`insert into capital_transactions (organization_id,fund_id,investo
 threw = false; try { await db.exec(`update capital_transactions set amount = 2`); } catch { threw = true; }
 ok(threw, 'append-only protection is back on after purge');
 ok((await as(lpD, `select * from investors`)).rows.length === 0, 'purged sample LP loses access');
+
+// ── Outside counsel ──
+await as(owner, `select set_require_staff_mfa('${vcgOrg}', false)`, 'aal2');
+const cns = '88888888-8888-8888-8888-888888888888';
+await db.exec(`insert into auth.users (id,email) values ('${cns}','jane@savvi.law')`);
+await as(adm, `select add_staff_member('${vcgOrg}','jane@savvi.law','counsel')`);
+ok((await as(owner, `select role from org_members('${vcgOrg}') where email='jane@savvi.law'`)).rows[0].role === 'counsel', 'admin can invite counsel; shows on team');
+ok((await as(cns, `select * from investors`)).rows.length === 0, 'counsel cannot see investors');
+ok((await as(cns, `select * from commitments`)).rows.length === 0, 'counsel cannot see commitments');
+ok((await as(cns, `select * from capital_transactions`)).rows.length === 0, 'counsel cannot see capital');
+ok((await as(cns, `select * from subscriptions`)).rows.length === 0, 'counsel cannot see subscriptions');
+ok((await as(cns, `select * from fund_wire_instructions`)).rows.length === 0, 'counsel cannot see wire instructions');
+ok((await as(cns, `select * from funds`)).rows.length >= 1, 'counsel can read fund terms');
+await db.exec(`insert into documents (organization_id,title,category,visibility,storage_path) values ('${vcgOrg}','PPM draft','offering','internal','${vcgOrg}/ppm-draft.pdf'),('${vcgOrg}','Board memo','general','internal','${vcgOrg}/memo2.pdf')`);
+const cdocs = (await as(cns, `select title from documents`)).rows.map(r => r.title);
+ok(cdocs.includes('PPM draft') && !cdocs.includes('Board memo') && !cdocs.includes('W-9'), 'counsel sees offering docs only, never investor files');
+
+const d2 = (await as(owner, `insert into doc_drafts (organization_id,fund_id,kind,version,terms_snapshot,created_by) values ('${vcgOrg}','${fundId}','lpa',1,'{}','${owner}') returning id`)).rows[0].id;
+const s1 = (await as(owner, `insert into doc_sections (organization_id,draft_id,position,key,heading,content) values ('${vcgOrg}','${d2}',0,'formation','Art 1','Formed in [[MISSING: state]]') returning id`)).rows[0].id;
+ok((await as(cns, `select * from doc_sections where draft_id='${d2}'`)).rows.length === 1, 'counsel can read drafts');
+threw = false; try { await as(cns, `update doc_sections set content='x' where id='${s1}'`); } catch { threw = true; }
+ok((await db.query(`select content from doc_sections where id='${s1}'`)).rows[0].content.startsWith('Formed'), 'counsel cannot edit draft text');
+await as(cns, `insert into doc_comments (organization_id,draft_id,section_id,author_id,body,author_email) values ('${vcgOrg}','${d2}','${s1}','${cns}','Use Delaware','spoof@x.com')`);
+ok((await as(owner, `select author_email from doc_comments`)).rows[0].author_email === 'jane@savvi.law', 'comment author email comes from login, not input');
+threw = false; try { await as(cns, `insert into doc_comments (organization_id,draft_id,author_id,body) values ('${vcgOrg}','${d2}','${owner}','fake')`); } catch { threw = true; }
+ok(threw, 'cannot comment as someone else');
+ok((await as(lpA, `select * from doc_comments`)).rows.length === 0, 'investors never see comments');
+threw = false; try { await as(cns, `select counsel_approve('${d2}','ok')`); } catch { threw = true; }
+ok(threw, 'counsel cannot approve while items are open');
+await as(owner, `update doc_sections set content='Formed in Delaware' where id='${s1}'`);
+threw = false; try { await as(ir, `select counsel_approve('${d2}','ok')`); } catch { threw = true; }
+ok(threw, 'only counsel can use counsel sign-off');
+await as(cns, `select counsel_approve('${d2}','Approved for distribution')`);
+const ap = (await db.query(`select status, approved_by_name from doc_drafts where id='${d2}'`)).rows[0];
+ok(ap.status === 'approved' && ap.approved_by_name === 'Counsel: jane@savvi.law', 'counsel approval recorded under their own login');
+threw = false; try { await as(adm, `select add_staff_member('${vcgOrg}','jane@savvi.law','admin')`); } catch { threw = true; }
+ok(threw, 'admin cannot promote counsel to admin');
