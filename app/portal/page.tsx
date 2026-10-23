@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getSession } from '@/lib/session';
 import { signOut } from '@/app/login/actions';
 import { fmtMoney, fmtPct } from '@/lib/money';
@@ -5,7 +6,8 @@ import { txnLabel, DOC_CATEGORIES } from '@/lib/labels';
 
 /** Limited-partner view. Every query here is filtered by RLS to the signed-in
  *  investor's own records; the page never filters by investor id itself. */
-export default async function Portal() {
+export default async function Portal({ searchParams }: { searchParams: Promise<{ submitted?: string }> }) {
+  const sp = await searchParams;
   const { supabase, user, orgName } = await getSession();
 
   const [{ data: me }, { data: accounts }, { data: funds }, { data: txns }, { data: docs }] = await Promise.all([
@@ -15,6 +17,17 @@ export default async function Portal() {
     supabase.from('capital_transactions').select('id, fund_id, kind, amount, effective_date, reverses_id').order('effective_date', { ascending: false }),
     supabase.from('documents').select('id, title, category, created_at').order('created_at', { ascending: false }),
   ]);
+  const [{ data: subs }, { data: wires }] = await Promise.all([
+    supabase.from('subscriptions').select('id, fund_id, status, amount, review_note'),
+    supabase.from('fund_wire_instructions').select('fund_id, instructions, verify_phone'),
+  ]);
+  const SUB_LABEL: Record<string, [string, string, string]> = {
+    in_progress: ['Not finished', 'warn', 'Continue subscription'],
+    changes_requested: ['Changes requested', 'bad', 'Make changes'],
+    submitted: ['Under review', '', 'View'],
+    approved: ['Approved', 'good', 'View'],
+    declined: ['Declined', 'bad', 'View'],
+  };
 
   const fundName = (id: string) => funds?.find((f) => f.id === id)?.name ?? 'Fund';
   const reversed = new Set((txns ?? []).filter((t) => t.reverses_id).map((t) => t.reverses_id));
@@ -37,6 +50,33 @@ export default async function Portal() {
         </div>
 
         {!me && <div className="alert error">Your login isn&apos;t linked to an investor account yet. Please contact the fund manager.</div>}
+
+        {sp.submitted && <div className="alert ok">Thank you. Your subscription was submitted and the fund manager will review it shortly.</div>}
+
+        {(subs ?? []).map((sb) => {
+          const [label, tone, cta] = SUB_LABEL[sb.status];
+          return (
+            <div className="card" key={sb.id}>
+              <div className="row between">
+                <h2 style={{ margin: 0 }}>Subscribe: {fundName(sb.fund_id)}</h2>
+                <span className={`pill ${tone}`}>{label}</span>
+              </div>
+              {sb.status === 'changes_requested' && <p className="small" style={{ color: 'var(--bad)' }}>{sb.review_note}</p>}
+              <p className="small muted">{sb.amount ? `Amount: ${fmtMoney(sb.amount)}` : 'Investor information, W-9, offering documents, accreditation, and signature.'}</p>
+              <Link className="btn" href={`/portal/subscribe/${sb.id}`}>{cta}</Link>
+            </div>
+          );
+        })}
+
+        {(wires ?? []).map((w) => (
+          <div className="card" key={w.fund_id} style={{ borderColor: '#f0e0a8' }}>
+            <h2>Funding instructions: {fundName(w.fund_id)}</h2>
+            <div className="alert error" style={{ marginBottom: 12 }}>
+              <strong>Wire fraud warning:</strong> before sending any money, call {w.verify_phone ? <strong>{w.verify_phone}</strong> : 'the fund manager at a number you already know'} to confirm these instructions by voice. We will never change wiring instructions by email.
+            </div>
+            <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>{w.instructions}</pre>
+          </div>
+        ))}
 
         {(accounts ?? []).map((a) => {
           const fund = funds?.find((f) => f.id === a.fund_id);

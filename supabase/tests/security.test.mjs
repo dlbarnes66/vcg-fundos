@@ -16,7 +16,7 @@ await db.exec(`
   alter table storage.objects enable row level security;
   create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name, '/') $$;
 `);
-for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
+for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
 await db.exec(readFileSync(`${root}/supabase/seed.sql`, 'utf8'));
 
 const owner = '11111111-1111-1111-1111-111111111111';
@@ -222,3 +222,67 @@ threw = false; try { await as(owner, `delete from doc_drafts where id='${dId}'`)
 ok((await db.query(`select count(*)::int n from doc_drafts`)).rows[0].n === 1, 'superseded/approved versions cannot be deleted');
 threw = false; try { await as(owner, `insert into doc_checks (organization_id,fund_id,sources,findings,created_by) values ('${vcgOrg}','${fundRow.id}','[]','[]','${adm}')`); } catch { threw = true; }
 ok(threw, 'check must be recorded as the caller');
+
+// ── Investor onboarding ──
+const lpD = '77777777-7777-7777-7777-777777777777';
+await db.exec(`insert into auth.users (id,email) values ('${lpD}','d@example.com')`);
+await as(owner, `select link_portal_user(id,'d@example.com') from investors where email='d@example.com'`);
+const invD = (await db.query(`select id from investors where email='d@example.com'`)).rows[0].id;
+const fundId = fundRow.id;
+// a second fund the LP was NOT invited to
+await db.exec(`insert into funds (organization_id,name,target_size) values ('${vcgOrg}','Fund II',5000000)`);
+const sub = (await as(owner, `insert into subscriptions (organization_id,fund_id,investor_id) values ('${vcgOrg}','${fundId}','${invD}') returning id`)).rows[0].id;
+ok((await as(lpD, `select name from funds`)).rows.map(r=>r.name).join() === 'VCG Veterans Housing Fund I', 'LP sees only the fund they were invited to');
+ok((await as(lpD, `select * from subscriptions`)).rows.length === 1, 'LP sees own subscription');
+ok((await as(lpA, `select * from subscriptions`)).rows.length === 0, 'other LP cannot see it');
+threw = false; try { await as(lpD, `update subscriptions set status='approved'`); } catch { threw = true; }
+ok((await db.query(`select status from subscriptions where id='${sub}'`)).rows[0].status === 'in_progress', 'LP cannot update subscription directly');
+threw = false; try { await as(lpA, `select lp_save_profile('${sub}','X','individual','123 Main St','','','','','')`); } catch { threw = true; }
+ok(threw, 'other LP cannot fill in this subscription');
+
+await as(lpD, `select lp_save_profile('${sub}','Sample Investor D','individual','1 Main St, Mobile AL','555','','','','')`);
+threw = false; try { await as(lpD, `select lp_sign('${sub}',75000,'Sample D','${'a'.repeat(64)}',null,'1.1.1.1','ua')`); } catch { threw = true; }
+ok(threw, 'cannot sign before earlier steps');
+
+// LP uploads into own folder only
+const goodPath = `${vcgOrg}/lp/${invD}/w9.pdf`;
+await as(lpD, `insert into storage.objects (bucket_id,name) values ('documents','${goodPath}')`);
+threw = false; try { await as(lpD, `insert into storage.objects (bucket_id,name) values ('documents','${vcgOrg}/lp/${invE}/x.pdf')`); } catch { threw = true; }
+ok(threw, 'LP cannot upload into another investor folder');
+threw = false; try { await as(lpD, `insert into storage.objects (bucket_id,name) values ('documents','${vcgOrg}/x.pdf')`); } catch { threw = true; }
+ok(threw, 'LP cannot upload outside their folder');
+const w9 = (await as(lpD, `insert into documents (organization_id,investor_id,title,category,visibility,storage_path,uploaded_by) values ('${vcgOrg}','${invD}','W-9','tax','investor','${goodPath}','${lpD}') returning id`)).rows[0].id;
+threw = false; try { await as(lpD, `insert into documents (organization_id,investor_id,title,category,visibility,storage_path,uploaded_by) values ('${vcgOrg}','${invD}','x','offering','all_investors','${vcgOrg}/lp/${invD}/y.pdf','${lpD}')`); } catch { threw = true; }
+ok(threw, 'LP cannot publish documents to all investors');
+ok((await as(lpA, `select * from documents where id='${w9}'`)).rows.length === 0, "other LP cannot see someone's W-9");
+ok((await as(ir, `select * from documents where id='${w9}'`)).rows.length === 1, 'staff can see uploaded W-9');
+
+await as(lpD, `select lp_attach('${sub}','w9','${w9}')`);
+await as(lpD, `select lp_ack_documents('${sub}','[{"id":"x","title":"PPM"}]')`);
+await as(lpD, `select lp_set_accreditation('${sub}','net_worth','')`);
+const acc = (await as(lpD, `insert into documents (organization_id,investor_id,title,category,visibility,storage_path,uploaded_by) values ('${vcgOrg}','${invD}','CPA letter','accreditation','investor','${vcgOrg}/lp/${invD}/letter.pdf','${lpD}') returning id`)).rows[0].id;
+await as(lpD, `select lp_attach('${sub}','accreditation','${acc}')`);
+const packet = (await as(lpD, `insert into documents (organization_id,investor_id,title,category,visibility,storage_path,uploaded_by) values ('${vcgOrg}','${invD}','Signed sub','subscription','investor','${vcgOrg}/lp/${invD}/signed.pdf','${lpD}') returning id`)).rows[0].id;
+threw = false; try { await as(lpD, `select lp_sign('${sub}',10000,'Sample D','${'a'.repeat(64)}','${packet}','1.1.1.1','ua')`); } catch { threw = true; }
+ok(threw, 'below-minimum amount rejected');
+await as(lpD, `select lp_sign('${sub}',75000,'Sample Investor D','${'a'.repeat(64)}','${packet}','1.1.1.1','ua')`);
+await as(lpD, `select lp_submit('${sub}')`);
+threw = false; try { await as(lpD, `select lp_set_accreditation('${sub}','income','')`); } catch { threw = true; }
+ok(threw, 'LP cannot change after submitting');
+ok((await as(lpD, `select * from fund_wire_instructions`)).rows.length === 0, 'no wire instructions before acceptance');
+await as(owner, `insert into fund_wire_instructions (fund_id,organization_id,instructions) values ('${fundId}','${vcgOrg}','Bank X acct 123')`);
+ok((await as(lpD, `select * from fund_wire_instructions`)).rows.length === 0, 'wire instructions hidden until approved');
+threw = false; try { await as(adm, `insert into fund_wire_instructions (fund_id,organization_id,instructions) values ('${fundId}','${vcgOrg}','evil') on conflict (fund_id) do update set instructions='evil'`); } catch { threw = true; }
+ok((await db.query(`select instructions from fund_wire_instructions`)).rows[0].instructions === 'Bank X acct 123', 'only owner can set wire instructions');
+
+threw = false; try { await as(ir, `select approve_subscription('${sub}', current_date + 90, '')`); } catch { threw = true; }
+ok(threw, 'IR cannot approve');
+threw = false; try { await as(owner, `select approve_subscription('${sub}', current_date - 1, '')`); } catch { threw = true; }
+ok(threw, 'expiry must be in the future');
+await as(owner, `select approve_subscription('${sub}', current_date + 90, 'Letter from CPA reviewed')`);
+const invNow = (await db.query(`select accreditation_status, stage from investors where id='${invD}'`)).rows[0];
+ok(invNow.accreditation_status === 'verified' && invNow.stage === 'committed', 'approval verifies accreditation and moves stage');
+ok((await as(lpD, `select amount, status from commitments`)).rows.some(r => Number(r.amount) === 75000 && r.status === 'accepted'), 'approval creates accepted commitment');
+ok((await as(lpD, `select * from fund_wire_instructions`)).rows.length === 1, 'wire instructions visible after acceptance');
+ok((await as(lpA, `select * from fund_wire_instructions`)).rows.length === 1 , 'LP A (already accepted in seed) also sees them');
+ok((await as(lpE, `select * from fund_wire_instructions`)).rows.length === 0, 'unlinked LP sees no wire instructions');

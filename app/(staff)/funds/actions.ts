@@ -99,3 +99,43 @@ export async function updateFund(id: string, formData: FormData) {
   revalidatePath('/', 'layout');
   back(`/funds/${id}`, err ? 'error' : 'ok', err ?? 'Fund terms saved. The change is recorded in the audit log.');
 }
+
+/** Which data-room document investors sign. It must be shared with all investors. */
+export async function setSubscriptionTemplate(fundId: string, formData: FormData) {
+  let err: string | undefined;
+  try {
+    const { supabase } = await requireRole(CAPITAL_ROLES);
+    const docId = String(formData.get('doc') ?? '') || null;
+    if (docId) {
+      const { data: d } = await supabase.from('documents').select('visibility, storage_path').eq('id', docId).single();
+      if (!d) throw new Error('Document not found');
+      if (d.visibility !== 'all_investors') throw new Error('Share that document with all investors first (Data room → upload with "All investors").');
+      if (!d.storage_path.toLowerCase().endsWith('.pdf')) throw new Error('The subscription agreement must be a PDF.');
+    }
+    const { error } = await supabase.from('funds').update({ subscription_doc_id: docId }).eq('id', fundId);
+    if (error) throw error;
+  } catch (e) {
+    err = errorText(e);
+  }
+  back(`/funds/${fundId}#onboarding`, err ? 'error' : 'ok', err ?? 'Subscription agreement set.');
+}
+
+/** Owner only. Shown to an investor only after their commitment is accepted. */
+export async function saveWireInstructions(fundId: string, formData: FormData) {
+  let err: string | undefined;
+  try {
+    const { supabase, orgId, user } = await requireRole(['owner']);
+    const instructions = String(formData.get('instructions') ?? '').trim();
+    const phone = String(formData.get('verify_phone') ?? '').trim() || null;
+    if (instructions.length < 10) throw new Error('Enter the full wire instructions');
+    if (!phone) throw new Error('Add a phone number investors call to confirm instructions before wiring');
+    const { error } = await supabase.from('fund_wire_instructions').upsert({
+      fund_id: fundId, organization_id: orgId, instructions: instructions.slice(0, 4000), verify_phone: phone.slice(0, 50),
+      updated_by: user.id, updated_at: new Date().toISOString(),
+    });
+    if (error) throw error;
+  } catch (e) {
+    err = errorText(e);
+  }
+  back(`/funds/${fundId}#onboarding`, err ? 'error' : 'ok', err ?? 'Wire instructions saved. Changes are recorded in the audit log.');
+}

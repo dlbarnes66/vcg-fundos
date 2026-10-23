@@ -45,7 +45,8 @@ export const DOC_CATEGORIES = [
   ['offering', 'Offering (PPM, fact sheet)'],
   ['subscription', 'Subscription docs'],
   ['report', 'Quarterly report'],
-  ['tax', 'Tax (K-1)'],
+  ['tax', 'Tax (K-1, W-9)'],
+  ['accreditation', 'Accreditation evidence'],
   ['notice', 'Notice'],
   ['general', 'General'],
 ] as const;

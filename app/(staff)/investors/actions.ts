@@ -165,6 +165,11 @@ export async function invitePortal(investorId: string, _prev: InviteState, formD
     const { url, isNew } = await signInLink(supabase, orgId, email);
     const { error } = await supabase.rpc('link_portal_user', { p_investor_id: investorId, p_email: email });
     if (error) throw error;
+    // Open a subscription for each fund that is raising, so onboarding is waiting for them.
+    const { data: raising } = await supabase.from('funds').select('id').eq('organization_id', orgId).eq('status', 'raising');
+    for (const f of raising ?? []) {
+      await supabase.from('subscriptions').insert({ organization_id: orgId, fund_id: f.id, investor_id: investorId }); // ignore if already open
+    }
 
     revalidatePath(`/investors/${investorId}`);
     const sent = await sendInviteEmail({ to: email, orgName, url, forInvestor: true, isNew }).catch(() => false);

@@ -28,7 +28,7 @@ Internal fund-management platform for Venture Collective Group, built multi-tena
 ## Setup (about 15 minutes)
 
 1. **Create a new Supabase project** for this app. Don't reuse the vcgnow portal project; keep investor financial data separate.
-2. **Run the schema.** Supabase → SQL Editor → run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_crm_handoff.sql`, `0003_team_and_funds.sql`, `0004_document_studio.sql`). Then run `supabase/seed.sql` (this only defines the demo function).
+2. **Run the schema.** Supabase → SQL Editor → run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_crm_handoff.sql`, `0003_team_and_funds.sql`, `0004_document_studio.sql`, `0005_investor_onboarding.sql`). Then run `supabase/seed.sql` (this only defines the demo function).
 3. **Create your login.** Authentication → Users → Add user (email + password, auto-confirm).
 4. **Make yourself owner.** In the SQL editor:
    ```sql
@@ -83,6 +83,21 @@ curl -X POST "$FUNDOS_URL/api/intake" \
 - Each handoff is logged on the investor's activity timeline.
 - Only a SHA-256 hash of the key is stored. Revoke a key in Settings and calls with it fail immediately.
 
+## Investor onboarding
+
+Investors subscribe in their portal in five steps: **investor information**, **W-9 upload**, **read the offering documents**, **accreditation verification letter**, and **e-signature**. Then you review and approve.
+
+**Set up once per fund** (Funds → your fund → *Investor onboarding*):
+1. Upload the offering documents (PPM, LPA, fact sheet) to the Data room with category **Offering** and visibility **All investors**.
+2. Upload the subscription agreement as a PDF shared with **All investors**, then choose it as the fund's subscription agreement.
+3. Owner only: enter the **wire instructions** and a phone number investors call to confirm them. Investors see these only after you accept their commitment.
+
+**Per investor:** invite them to the portal from their record. A subscription opens automatically for each fund that is *Raising*. You can also open one with **Open subscription**. When they submit, it appears in **Subscriptions** as *Ready for review*. **Approve** marks accreditation verified (with an expiry date), creates the accepted commitment, and moves them to Committed. **Send back** asks for changes, and they re-sign.
+
+**E-signature** is built in (no DocuSign fee): consent, typed signature, account, time, IP and device, plus a SHA-256 fingerprint of the exact PDF signed, all on a certificate page attached to the signed copy. Have fund counsel confirm they're comfortable with click-to-sign for your subscription agreement.
+
+**Privacy:** SSNs and EINs are never typed into FundOS. They're on the uploaded W-9, stored in the investor's private folder.
+
 ## Document Studio
 
 AI-assisted **drafts** of fund documents for counsel review: PPM, LPA, subscription agreement, investor questionnaire, capital call notice and side letter. Plus a **consistency checker** for documents you already have.
@@ -99,7 +114,7 @@ Requires `ANTHROPIC_API_KEY` in Vercel (type **Secret**). Optional: `ANTHROPIC_M
 ```bash
 npm test
 ```
-Runs the pref-return and money unit tests, plus 61 database security tests against an in-memory Postgres: tenant isolation, LP visibility, storage access, append-only capital, reversals, the 506(c) acceptance rule, portal-linking permissions and the CRM OS handoff (keys, dedupe, revocation), team roles and fund-term permissions.
+Runs the pref-return and money unit tests, plus 84 database security tests against an in-memory Postgres: tenant isolation, LP visibility, storage access, append-only capital, reversals, the 506(c) acceptance rule, portal-linking permissions and the CRM OS handoff (keys, dedupe, revocation), team roles and fund-term permissions.
 
 ## Deploying
 

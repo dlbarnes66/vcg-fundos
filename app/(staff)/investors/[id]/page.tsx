@@ -8,6 +8,7 @@ import { Flash } from '@/lib/flash';
 import { prefEstimate, type CapitalEvent } from '@/lib/pref';
 import { updateInvestor, addActivity, addCommitment, setCommitmentStatus, invitePortal, sendPortalLink } from '../actions';
 import { InviteForm } from '@/app/invite-result';
+import { startSubscription } from '../../subscriptions/actions';
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; error?: string }> };
 
@@ -28,6 +29,8 @@ export default async function InvestorPage({ params, searchParams }: Props) {
     supabase.from('capital_transactions').select('id, fund_id, kind, amount, effective_date, memo, reverses_id').eq('investor_id', id).order('effective_date'),
     supabase.from('capital_accounts').select('*').eq('investor_id', id),
   ]);
+  const { data: subs } = await supabase.from('subscriptions').select('id, fund_id, status, amount').eq('investor_id', id);
+  const openableFunds = funds.filter((f) => ['raising', 'draft'].includes(f.status) && !(subs ?? []).some((x) => x.fund_id === f.id));
 
   const fundName = (fid: string) => funds.find((f) => f.id === fid)?.name ?? 'Fund';
   const reversed = new Set((txns ?? []).filter((t) => t.reverses_id).map((t) => t.reverses_id));
@@ -171,6 +174,23 @@ export default async function InvestorPage({ params, searchParams }: Props) {
             {!txns?.length && <tr><td colSpan={5} className="muted">No capital activity.</td></tr>}
           </tbody>
         </table></div>
+      </div>
+
+      <div className="card">
+        <h2>Subscription (onboarding)</h2>
+        {(subs ?? []).map((x) => (
+          <p key={x.id} className="small" style={{ margin: '0 0 6px' }}>
+            {fundName(x.fund_id)}: <strong>{x.status.replace('_', ' ')}</strong>{x.amount ? ` · ${fmtMoney(x.amount)}` : ''} · <Link href={`/subscriptions/${x.id}`}>Open review →</Link>
+          </p>
+        ))}
+        {!subs?.length && <p className="small muted" style={{ marginTop: -6 }}>No subscription yet. Open one and the investor completes it in their portal: profile, W-9, offering documents, accreditation letter, and e-signature.</p>}
+        {canWrite && openableFunds.length > 0 && (
+          <form action={startSubscription.bind(null, id)} className="row" style={{ marginTop: 8 }}>
+            <select name="fund_id">{openableFunds.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
+            <button type="submit" className="ghost">Open subscription</button>
+          </form>
+        )}
+        {!inv.portal_user_id && <p className="small muted" style={{ marginBottom: 0 }}>They&apos;ll also need portal access (below) to fill it in.</p>}
       </div>
 
       {canCapital && (

@@ -12,6 +12,7 @@ export default async function StaffLayout({ children }: { children: React.ReactN
         <Link href="/dashboard">Dashboard</Link>
         <Link href="/funds">Funds</Link>
         <Link href="/investors">Investor pipeline</Link>
+        <Link href="/subscriptions">Subscriptions</Link>
         <Link href="/capital">Capital activity</Link>
         <Link href="/documents">Data room</Link>
         <Link href="/studio">Document Studio</Link>
