@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/session';
 import { signOut } from '@/app/login/actions';
 import { fmtMoney, fmtPct } from '@/lib/money';
@@ -9,6 +10,8 @@ import { txnLabel, DOC_CATEGORIES } from '@/lib/labels';
 export default async function Portal({ searchParams }: { searchParams: Promise<{ submitted?: string }> }) {
   const sp = await searchParams;
   const { supabase, user, orgName } = await getSession();
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal?.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') redirect('/mfa?next=/portal');
 
   const [{ data: me }, { data: accounts }, { data: funds }, { data: txns }, { data: docs }] = await Promise.all([
     supabase.from('investors').select('display_name').eq('portal_user_id', user.id).maybeSingle(),

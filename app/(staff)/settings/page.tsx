@@ -1,11 +1,12 @@
 import { requireStaff, CAPITAL_ROLES } from '@/lib/session';
 import { Flash } from '@/lib/flash';
 import { CreateKeyForm } from './create-key-form';
-import { revokeKey } from './actions';
+import { revokeKey, setRequireMfa, purgeDemo } from './actions';
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string }> }) {
   const sp = await searchParams;
-  const { supabase, orgId, role } = await requireStaff();
+  const { supabase, orgId, role, requireStaffMfa, aal } = await requireStaff();
+  const { count: demoCount } = await supabase.from('investors').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).ilike('email', '%@example.com');
   const isAdmin = CAPITAL_ROLES.includes(role);
   const { data: keys } = isAdmin
     ? await supabase
@@ -22,6 +23,25 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <p className="sub" style={{ marginBottom: 0 }}>Connections to other VCG systems.</p>
       </div>
       <Flash ok={sp.ok} error={sp.error} />
+
+      {role === 'owner' && (
+        <div className="card stack" style={{ gap: 10 }}>
+          <h2 style={{ margin: 0 }}>Two-factor sign-in</h2>
+          <p className="small muted" style={{ margin: 0 }}>
+            When required, every team member must use an authenticator app, and posting money, approving subscriptions and changing wire instructions are blocked without it, even at the database level.
+            Status: <strong>{requireStaffMfa ? 'Required for all staff' : 'Optional'}</strong>. Your session: {aal === 'aal2' ? 'verified with two-factor' : 'password only'}.
+          </p>
+          <div className="row">
+            {requireStaffMfa ? (
+              <form action={setRequireMfa}><input type="hidden" name="on" value="no" /><button className="ghost" type="submit">Make optional</button></form>
+            ) : aal === 'aal2' ? (
+              <form action={setRequireMfa}><input type="hidden" name="on" value="yes" /><button type="submit">Require for all staff</button></form>
+            ) : (
+              <a className="btn" href="/account/security">Set up two-factor on your account first</a>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="card stack" style={{ gap: 14 }}>
         <div>
@@ -82,6 +102,19 @@ Content-Type: application/json
 → 401 invalid or revoked key · 422 validation error`}</pre>
         </details>
       </div>
+
+      {role === 'owner' && (demoCount ?? 0) > 0 && (
+        <form className="card stack" action={purgeDemo} style={{ gap: 10, borderColor: '#ecc5c2' }}>
+          <h2 style={{ margin: 0 }}>Clear sample data</h2>
+          <p className="small muted" style={{ margin: 0 }}>
+            Permanently removes the {demoCount} sample investors (emails ending in @example.com) and their commitments, capital entries, subscriptions and documents. Your funds, terms, team and real investors are not touched. Do this before adding real investors.
+          </p>
+          <div className="form-grid">
+            <label>Type DELETE DEMO DATA to confirm<input name="confirm" required autoComplete="off" /></label>
+            <button className="danger" type="submit" style={{ padding: '9px 14px' }}>Delete sample data</button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

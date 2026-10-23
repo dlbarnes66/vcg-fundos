@@ -20,6 +20,7 @@ export default async function StaffLayout({ children }: { children: React.ReactN
         <Link href="/settings">Settings</Link>
         <div className="spacer" />
         <div className="who">{user.email}<br />{orgName} · {ROLE_LABELS[role]}</div>
+        <Link href="/account/security">Sign-in security</Link>
         <form action={signOut}><button type="submit">Sign out</button></form>
       </nav>
       <main className="main">{children}</main>

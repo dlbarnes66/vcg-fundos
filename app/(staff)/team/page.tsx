@@ -2,7 +2,7 @@ import { requireStaff, CAPITAL_ROLES } from '@/lib/session';
 import { ROLE_LABELS } from '@/lib/labels';
 import { Flash } from '@/lib/flash';
 import { InviteForm } from '@/app/invite-result';
-import { inviteMember, sendMemberLink, changeRole, removeMember } from './actions';
+import { inviteMember, sendMemberLink, changeRole, removeMember, resetMemberMfa } from './actions';
 
 const ROLE_HELP: [string, string][] = [
   ['owner', 'Everything, including roles and removing people'],
@@ -78,7 +78,10 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
                     <div className="stack" style={{ gap: 6, alignItems: 'flex-end' }}>
                       <InviteForm action={sendMemberLink.bind(null, m.email)} submitLabel="Send sign-in link" className="row" />
                       {isOwner && (
-                        <form action={removeMember.bind(null, m.user_id)}><button className="danger" type="submit">Remove</button></form>
+                        <div className="row" style={{ justifyContent: 'flex-end' }}>
+                          <form action={resetMemberMfa.bind(null, m.user_id)}><button className="ghost" type="submit" style={{ padding: '5px 10px', fontSize: '.8rem' }}>Reset two-factor</button></form>
+                          <form action={removeMember.bind(null, m.user_id)}><button className="danger" type="submit">Remove</button></form>
+                        </div>
                       )}
                     </div>
                   )}

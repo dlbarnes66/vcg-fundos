@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { requireRole, CAPITAL_ROLES, type Role } from '@/lib/session';
 import { back, errorText } from '@/lib/flash';
 import { signInLink, sendInviteEmail, type InviteState } from '@/lib/invite';
+import { adminClient } from '@/lib/supabase/admin';
 
 const STAFF: Role[] = ['owner', 'admin', 'investor_relations', 'viewer'];
 const emailOf = (f: FormData) => String(f.get('email') ?? '').trim().toLowerCase();
@@ -67,4 +68,27 @@ export async function removeMember(userId: string) {
     err = errorText(e);
   }
   back('/team', err ? 'error' : 'ok', err ?? 'Removed. They can no longer sign in to this organization.');
+}
+
+/** Owner only: remove a team member's authenticator (lost phone). They set it up again at next sign-in. */
+export async function resetMemberMfa(userId: string) {
+  let err: string | undefined;
+  try {
+    const { supabase, orgId, user } = await requireRole(['owner']);
+    if (userId === user.id) throw new Error('Manage your own two-factor from Sign-in security.');
+    // Confirm they're on this organization's team before touching their account.
+    const { data: members, error: mErr } = await supabase.rpc('org_members', { p_org: orgId });
+    if (mErr) throw mErr;
+    if (!(members as { user_id: string }[]).some((m) => m.user_id === userId)) throw new Error('Not a member of your team');
+    const admin = adminClient();
+    const { data, error } = await admin.auth.admin.mfa.listFactors({ userId });
+    if (error) throw error;
+    for (const f of data.factors) {
+      const { error: dErr } = await admin.auth.admin.mfa.deleteFactor({ userId, id: f.id });
+      if (dErr) throw dErr;
+    }
+  } catch (e) {
+    err = errorText(e);
+  }
+  back('/team', err ? 'error' : 'ok', err ?? 'Two-factor reset. They will set it up again at their next sign-in.');
 }

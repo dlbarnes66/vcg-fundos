@@ -28,7 +28,7 @@ Internal fund-management platform for Venture Collective Group, built multi-tena
 ## Setup (about 15 minutes)
 
 1. **Create a new Supabase project** for this app. Don't reuse the vcgnow portal project; keep investor financial data separate.
-2. **Run the schema.** Supabase → SQL Editor → run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_crm_handoff.sql`, `0003_team_and_funds.sql`, `0004_document_studio.sql`, `0005_investor_onboarding.sql`). Then run `supabase/seed.sql` (this only defines the demo function).
+2. **Run the schema.** Supabase → SQL Editor → run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_crm_handoff.sql`, `0003_team_and_funds.sql`, `0004_document_studio.sql`, `0005_investor_onboarding.sql`, `0006_mfa_notify_cleanup.sql`). Then run `supabase/seed.sql` (this only defines the demo function).
 3. **Create your login.** Authentication → Users → Add user (email + password, auto-confirm).
 4. **Make yourself owner.** In the SQL editor:
    ```sql
@@ -83,6 +83,12 @@ curl -X POST "$FUNDOS_URL/api/intake" \
 - Each handoff is logged on the investor's activity timeline.
 - Only a SHA-256 hash of the key is stored. Revoke a key in Settings and calls with it fail immediately.
 
+## Security and notifications
+
+- **Two-factor sign-in:** everyone can turn it on under **Sign-in security** (sidebar) with any authenticator app. Owners can then require it for all staff (**Settings**). When required, posting money, approving subscriptions and changing wire instructions are refused by the database on a password-only session. Lost phone: an owner uses **Team → Reset two-factor**. If the *owner* loses their phone, remove the factor in Supabase → Authentication → Users → the user → MFA.
+- **Email notifications** (needs `RESEND_API_KEY` and `MAIL_FROM`): owners and admins are emailed when an investor submits a subscription; investors are emailed when they're approved, sent back or declined, and when you upload a document just for them (tick "Email the investor"). Without Resend, nothing is sent and nothing breaks.
+- **Clear sample data:** **Settings → Clear sample data** (owner, typed confirmation) removes the @example.com demo investors and everything attached. Do this before real investors are added.
+
 ## Investor onboarding
 
 Investors subscribe in their portal in five steps: **investor information**, **W-9 upload**, **read the offering documents**, **accreditation verification letter**, and **e-signature**. Then you review and approve.
@@ -114,7 +120,7 @@ Requires `ANTHROPIC_API_KEY` in Vercel (type **Secret**). Optional: `ANTHROPIC_M
 ```bash
 npm test
 ```
-Runs the pref-return and money unit tests, plus 84 database security tests against an in-memory Postgres: tenant isolation, LP visibility, storage access, append-only capital, reversals, the 506(c) acceptance rule, portal-linking permissions and the CRM OS handoff (keys, dedupe, revocation), team roles and fund-term permissions.
+Runs the pref-return and money unit tests, plus 97 database security tests against an in-memory Postgres: tenant isolation, LP visibility, storage access, append-only capital, reversals, the 506(c) acceptance rule, portal-linking permissions and the CRM OS handoff (keys, dedupe, revocation), team roles and fund-term permissions.
 
 ## Deploying
 

@@ -10,13 +10,14 @@ await db.exec(`
   create role anon; create role authenticated;
   create schema auth; create schema storage;
   create table auth.users (id uuid primary key, email text, last_sign_in_at timestamptz);
+  create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('test.jwt', true), ''), '{}')::jsonb $$;
   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
   create table storage.buckets (id text primary key, name text, public boolean);
   create table storage.objects (id uuid default gen_random_uuid(), bucket_id text, name text);
   alter table storage.objects enable row level security;
   create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name, '/') $$;
 `);
-for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
+for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql', '0006_mfa_notify_cleanup.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
 await db.exec(readFileSync(`${root}/supabase/seed.sql`, 'utf8'));
 
 const owner = '11111111-1111-1111-1111-111111111111';
@@ -33,9 +34,9 @@ await db.exec(`grant usage on schema public, auth, storage to authenticated;
   grant all on all tables in schema public to authenticated; grant all on all tables in schema storage to authenticated;
   grant usage, select on all sequences in schema public to authenticated;`);
 
-async function as(uid, sql) {
-  await db.exec(`set role authenticated; set test.uid = '${uid}';`);
-  try { return await db.query(sql); } finally { await db.exec(`reset role; set test.uid = '';`); }
+async function as(uid, sql, aal = 'aal1') {
+  await db.exec(`set role authenticated; set test.uid = '${uid}'; set test.jwt = '{"aal":"${aal}"}';`);
+  try { return await db.query(sql); } finally { await db.exec(`reset role; set test.uid = ''; set test.jwt = '';`); }
 }
 
 ok((await as(owner, 'select * from investors')).rows.length === 5, 'owner sees 5 investors');
@@ -286,3 +287,36 @@ ok((await as(lpD, `select amount, status from commitments`)).rows.some(r => Numb
 ok((await as(lpD, `select * from fund_wire_instructions`)).rows.length === 1, 'wire instructions visible after acceptance');
 ok((await as(lpA, `select * from fund_wire_instructions`)).rows.length === 1 , 'LP A (already accepted in seed) also sees them');
 ok((await as(lpE, `select * from fund_wire_instructions`)).rows.length === 0, 'unlinked LP sees no wire instructions');
+
+// ── Notifications, MFA, demo cleanup ──
+const notifyTo = (await as(lpD, `select * from subscription_notify_emails('${sub}')`)).rows.map(r => Object.values(r)[0]).sort();
+ok(notifyTo.join() === 'admin@x.com,owner@x.com', 'submission notifies owners/admins');
+threw = false; try { await as(lpA, `select * from subscription_notify_emails('${sub}')`); } catch { threw = true; }
+ok(threw, "another LP can't query notification recipients");
+ok((await as(ir, `select portal_email(id) e from investors where email='d@example.com'`)).rows[0].e === 'd@example.com', 'IR can look up portal email to notify');
+
+threw = false; try { await as(owner, `select set_require_staff_mfa('${vcgOrg}', true)`); } catch { threw = true; }
+ok(threw, 'cannot require MFA without an MFA session yourself');
+await as(owner, `select set_require_staff_mfa('${vcgOrg}', true)`, 'aal2');
+const tx = (await db.query(`select organization_id, fund_id, investor_id from capital_transactions limit 1`)).rows[0];
+threw = false; try { await as(owner, `insert into capital_transactions (organization_id,fund_id,investor_id,kind,amount,effective_date,posted_by) values ('${tx.organization_id}','${tx.fund_id}','${tx.investor_id}','distribution',1,current_date,'${owner}')`); } catch { threw = true; }
+ok(threw, 'MFA required: posting money without MFA is blocked');
+await as(owner, `insert into capital_transactions (organization_id,fund_id,investor_id,kind,amount,effective_date,posted_by) values ('${tx.organization_id}','${tx.fund_id}','${tx.investor_id}','distribution',1,current_date,'${owner}')`, 'aal2');
+ok(true, 'MFA required: posting money with MFA works');
+ok((await as(owner, `select * from investors`)).rows.length > 0, 'MFA does not block reading');
+threw = false; try { await as(owner, `update fund_wire_instructions set instructions='x'`); } catch { threw = true; }
+ok((await db.query(`select instructions from fund_wire_instructions`)).rows[0].instructions === 'Bank X acct 123', 'wire instructions need MFA when required');
+
+threw = false; try { await as(owner, `select purge_demo_data('${vcgOrg}','yes')`, 'aal2'); } catch { threw = true; }
+ok(threw, 'purge needs the confirmation phrase');
+threw = false; try { await as(adm, `select purge_demo_data('${vcgOrg}','DELETE DEMO DATA')`, 'aal2'); } catch { threw = true; }
+ok(threw, 'admin cannot purge');
+await db.exec(`insert into investors (organization_id, display_name, email) values ('${vcgOrg}','Real Person','real@gmail.com')`);
+const removed = (await as(owner, `select purge_demo_data('${vcgOrg}','DELETE DEMO DATA') n`, 'aal2')).rows[0].n;
+const left = (await db.query(`select email from investors where organization_id='${vcgOrg}'`)).rows.map(r => r.email);
+ok(removed === 5 && left.length === 2 && !left.some(e => e?.endsWith('@example.com')), `purge removed ${removed} sample investors, kept real ones`);
+const realInv = (await db.query(`select id from investors where email='real@gmail.com'`)).rows[0].id;
+await db.exec(`insert into capital_transactions (organization_id,fund_id,investor_id,kind,amount,effective_date) values ('${vcgOrg}','${fundId}','${realInv}','contribution',5,current_date)`);
+threw = false; try { await db.exec(`update capital_transactions set amount = 2`); } catch { threw = true; }
+ok(threw, 'append-only protection is back on after purge');
+ok((await as(lpD, `select * from investors`)).rows.length === 0, 'purged sample LP loses access');

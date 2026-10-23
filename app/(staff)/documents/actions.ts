@@ -3,6 +3,7 @@
 import { requireRole, WRITE_ROLES, CAPITAL_ROLES } from '@/lib/session';
 import { back, errorText } from '@/lib/flash';
 import { DOC_CATEGORIES } from '@/lib/labels';
+import { sendEmail } from '@/lib/notify';
 
 const ALLOWED = new Set([
   'application/pdf',
@@ -52,6 +53,18 @@ export async function uploadDocument(formData: FormData) {
     if (error) {
       await supabase.storage.from('documents').remove([path]);
       throw error;
+    }
+    if (visibility === 'investor' && investorId && formData.get('notify') === 'yes') {
+      const { data: email } = await supabase.rpc('portal_email', { p_investor_id: investorId });
+      if (email) {
+        await sendEmail({
+          to: [email as string],
+          subject: 'A new document is in your investor portal',
+          heading: 'New document for you',
+          lines: [`"${title}" has been added to your investor portal.`],
+          button: { label: 'Open investor portal', path: '/portal' },
+        });
+      }
     }
   } catch (e) {
     err = errorText(e);

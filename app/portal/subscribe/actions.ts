@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server';
 import { errorText } from '@/lib/flash';
 import { parseAmount } from '@/lib/money';
 import { buildSignedPacket, sha256 } from '@/lib/esign';
+import { sendEmail } from '@/lib/notify';
 
 const ALLOWED = new Set(['application/pdf', 'image/png', 'image/jpeg']);
 const MAX = 20 * 1024 * 1024;
@@ -146,6 +147,16 @@ export async function submitSubscription(subId: string) {
     const { supabase } = await ctx(subId);
     const { error } = await supabase.rpc('lp_submit', { p_sub: subId });
     if (error) throw error;
+    const { data: sub } = await supabase.from('subscriptions').select('legal_name, amount, fund_id').eq('id', subId).single();
+    const { data: fund } = await supabase.from('funds').select('name').eq('id', sub?.fund_id ?? '').maybeSingle();
+    const { data: emails } = await supabase.rpc('subscription_notify_emails', { p_sub: subId });
+    await sendEmail({
+      to: (emails ?? []) as string[],
+      subject: `Subscription ready for review: ${sub?.legal_name ?? 'investor'}`,
+      heading: 'New subscription to review',
+      lines: [`${sub?.legal_name ?? 'An investor'} submitted a subscription to ${fund?.name ?? 'the fund'} for $${Number(sub?.amount ?? 0).toLocaleString('en-US')}.`, 'Review the W-9, accreditation letter and signed agreement, then approve or send it back.'],
+      button: { label: 'Review subscription', path: `/subscriptions/${subId}` },
+    });
   } catch (e) { err = errorText(e); }
   if (err) done(subId, 'submit', err);
   redirect('/portal?submitted=1');

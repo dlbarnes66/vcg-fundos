@@ -33,3 +33,31 @@ export async function revokeKey(id: string) {
   }
   back('/settings', err ? 'error' : 'ok', err ?? 'Key revoked. CRM OS calls with it will now fail.');
 }
+
+export async function setRequireMfa(formData: FormData) {
+  let err: string | undefined;
+  const on = formData.get('on') === 'yes';
+  try {
+    const { supabase, orgId } = await requireRole(['owner']);
+    const { error } = await supabase.rpc('set_require_staff_mfa', { p_org: orgId, p_on: on });
+    if (error) throw error;
+  } catch (e) {
+    err = errorText(e);
+  }
+  back('/settings', err ? 'error' : 'ok', err ?? (on ? 'Two-factor is now required for all staff.' : 'Two-factor is now optional for staff.'));
+}
+
+export async function purgeDemo(formData: FormData) {
+  let err: string | undefined;
+  let n = 0;
+  try {
+    const { supabase, orgId } = await requireRole(['owner']);
+    const { data, error } = await supabase.rpc('purge_demo_data', { p_org: orgId, p_confirm: String(formData.get('confirm') ?? '') });
+    if (error) throw error;
+    n = Number(data ?? 0);
+  } catch (e) {
+    err = errorText(e);
+  }
+  revalidatePath('/', 'layout');
+  back('/settings', err ? 'error' : 'ok', err ?? (n ? `Removed ${n} sample investors and their records.` : 'No sample data found.'));
+}

@@ -53,6 +53,9 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
             <label>Investor (if one)
               <select name="investor_id"><option value="">—</option>{(investors ?? []).map((i) => <option key={i.id} value={i.id}>{i.display_name}</option>)}</select>
             </label>
+            <label className="row" style={{ flexDirection: 'row', fontWeight: 400, color: 'var(--ink)' }}>
+              <input type="checkbox" name="notify" value="yes" defaultChecked /> Email the investor (one-investor documents)
+            </label>
             <button type="submit">Upload</button>
           </div>
         </form>
