@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { fmtMoney } from '@/lib/money';
-import { INVESTOR_TYPES } from '@/lib/labels';
+import { INVESTOR_TYPES, US_STATES } from '@/lib/labels';
 import { ESIGN_CONSENT } from '@/lib/esign';
 import { saveProfile, uploadFile, acknowledgeDocs, setAccreditation, signSubscription, submitSubscription } from '../actions';
 
@@ -88,6 +88,12 @@ export default async function SubscribePage({ params, searchParams }: Props) {
                   </select>
                 </label>
                 <label>Phone<input name="phone" defaultValue={sub.phone ?? ''} /></label>
+                <label>State of residence (entities: principal place of business)
+                  <select name="state" defaultValue={sub.residence_state ?? ''} required>
+                    <option value="" disabled>Choose…</option>
+                    {US_STATES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                  </select>
+                </label>
               </div>
               <label>Mailing address<textarea name="address" defaultValue={sub.address ?? ''} required style={{ minHeight: 60 }} /></label>
               <p className="small muted" style={{ margin: 0 }}>For trusts, LLCs, partnerships, corporations:</p>

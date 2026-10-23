@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireStaff, WRITE_ROLES, CAPITAL_ROLES } from '@/lib/session';
 import { getFunds } from '@/lib/funds';
-import { STAGES, INVESTOR_TYPES, ACCREDITATION, txnLabel } from '@/lib/labels';
+import { STAGES, INVESTOR_TYPES, ACCREDITATION, US_STATES, txnLabel } from '@/lib/labels';
 import { fmtMoney } from '@/lib/money';
 import { Flash } from '@/lib/flash';
 import { prefEstimate, type CapitalEvent } from '@/lib/pref';
@@ -30,6 +30,7 @@ export default async function InvestorPage({ params, searchParams }: Props) {
     supabase.from('capital_accounts').select('*').eq('investor_id', id),
   ]);
   const { data: subs } = await supabase.from('subscriptions').select('id, fund_id, status, amount').eq('investor_id', id);
+  const { data: opened } = await supabase.from('document_opens').select('document_id, title, opens, first_opened, last_opened').eq('investor_id', id).order('last_opened', { ascending: false });
   const openableFunds = funds.filter((f) => ['raising', 'draft'].includes(f.status) && !(subs ?? []).some((x) => x.fund_id === f.id));
 
   const fundName = (fid: string) => funds.find((f) => f.id === fid)?.name ?? 'Fund';
@@ -81,6 +82,12 @@ export default async function InvestorPage({ params, searchParams }: Props) {
               </label>
               <label>Email<input name="email" type="email" defaultValue={inv.email ?? ''} /></label>
               <label>Phone<input name="phone" defaultValue={inv.phone ?? ''} /></label>
+              <label>Home state
+                <select name="home_state" defaultValue={inv.home_state ?? ''}>
+                  <option value="">Not set</option>
+                  {US_STATES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                </select>
+              </label>
               <label>Source<input name="source" defaultValue={inv.source ?? ''} /></label>
               <label>Target amount<input name="target_amount" inputMode="decimal" defaultValue={inv.target_amount ?? ''} /></label>
               <label>Next follow-up<input name="next_follow_up" type="date" defaultValue={inv.next_follow_up ?? ''} /></label>
@@ -174,6 +181,24 @@ export default async function InvestorPage({ params, searchParams }: Props) {
             {!txns?.length && <tr><td colSpan={5} className="muted">No capital activity.</td></tr>}
           </tbody>
         </table></div>
+      </div>
+
+      <div className="card">
+        <h2>Documents opened</h2>
+        {opened?.length ? (
+          <div className="table-wrap"><table>
+            <thead><tr><th>Document</th><th className="num">Opens</th><th>First</th><th>Last</th></tr></thead>
+            <tbody>
+              {opened.map((o) => (
+                <tr key={o.document_id}>
+                  <td>{o.title}</td><td className="num">{o.opens}</td>
+                  <td className="small muted">{new Date(o.first_opened).toLocaleString()}</td>
+                  <td className="small muted">{new Date(o.last_opened).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+        ) : <p className="small muted" style={{ margin: 0 }}>{inv.portal_user_id ? 'Has not opened any documents in the portal yet.' : 'Tracked once they have portal access. Before that, use CRM OS data-room links, which track views too.'}</p>}
       </div>
 
       <div className="card">

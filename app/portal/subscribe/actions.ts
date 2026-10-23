@@ -35,6 +35,7 @@ export async function saveProfile(subId: string, formData: FormData) {
       p_sub: subId, p_legal_name: s(formData, 'legal_name'), p_type: s(formData, 'investor_type') || 'individual',
       p_address: s(formData, 'address'), p_phone: s(formData, 'phone'), p_entity_details: s(formData, 'entity_details'),
       p_signer_name: s(formData, 'signer_name'), p_signer_title: s(formData, 'signer_title'), p_beneficial_owners: s(formData, 'beneficial_owners'),
+      p_state: s(formData, 'state'),
     });
     if (error) throw error;
   } catch (e) { err = errorText(e); }

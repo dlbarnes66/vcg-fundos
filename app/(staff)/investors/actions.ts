@@ -66,6 +66,7 @@ export async function updateInvestor(id: string, formData: FormData) {
         accreditation_verified_at: str(formData, 'accreditation_verified_at'),
         accreditation_expires_at: str(formData, 'accreditation_expires_at'),
         notes: str(formData, 'notes'),
+        home_state: str(formData, 'home_state'),
       })
       .eq('id', id);
     if (error) throw error;

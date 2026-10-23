@@ -17,7 +17,7 @@ await db.exec(`
   alter table storage.objects enable row level security;
   create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name, '/') $$;
 `);
-for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql', '0006_mfa_notify_cleanup.sql', '0007_counsel_role.sql', '0008_counsel_review.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
+for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql', '0006_mfa_notify_cleanup.sql', '0007_counsel_role.sql', '0008_counsel_review.sql', '0009_compliance_tracking.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
 await db.exec(readFileSync(`${root}/supabase/seed.sql`, 'utf8'));
 
 const owner = '11111111-1111-1111-1111-111111111111';
@@ -238,10 +238,10 @@ ok((await as(lpD, `select * from subscriptions`)).rows.length === 1, 'LP sees ow
 ok((await as(lpA, `select * from subscriptions`)).rows.length === 0, 'other LP cannot see it');
 threw = false; try { await as(lpD, `update subscriptions set status='approved'`); } catch { threw = true; }
 ok((await db.query(`select status from subscriptions where id='${sub}'`)).rows[0].status === 'in_progress', 'LP cannot update subscription directly');
-threw = false; try { await as(lpA, `select lp_save_profile('${sub}','X','individual','123 Main St','','','','','')`); } catch { threw = true; }
+threw = false; try { await as(lpA, `select lp_save_profile('${sub}','X','individual','123 Main St','','','','','','AL')`); } catch { threw = true; }
 ok(threw, 'other LP cannot fill in this subscription');
 
-await as(lpD, `select lp_save_profile('${sub}','Sample Investor D','individual','1 Main St, Mobile AL','555','','','','')`);
+await as(lpD, `select lp_save_profile('${sub}','Sample Investor D','individual','1 Main St, Mobile AL','555','','','','','AL')`);
 threw = false; try { await as(lpD, `select lp_sign('${sub}',75000,'Sample D','${'a'.repeat(64)}',null,'1.1.1.1','ua')`); } catch { threw = true; }
 ok(threw, 'cannot sign before earlier steps');
 
@@ -357,3 +357,46 @@ const ap = (await db.query(`select status, approved_by_name from doc_drafts wher
 ok(ap.status === 'approved' && ap.approved_by_name === 'Counsel: jane@savvi.law', 'counsel approval recorded under their own login');
 threw = false; try { await as(adm, `select add_staff_member('${vcgOrg}','jane@savvi.law','admin')`); } catch { threw = true; }
 ok(threw, 'admin cannot promote counsel to admin');
+
+// ── Compliance calendar ──
+// Fresh fund so dates are predictable.
+const f3 = (await db.query(`insert into funds (organization_id,name,target_size,min_commitment,status) values ('${vcgOrg}','Fund III',1000000,50000,'raising') returning id`)).rows[0].id;
+const ncInv = (await db.query(`insert into investors (organization_id,display_name,email,accreditation_status,home_state) values ('${vcgOrg}','NC Investor','nc@real.com','verified','NC') returning id`)).rows[0].id;
+const alInv = (await db.query(`insert into investors (organization_id,display_name,email,accreditation_status,home_state) values ('${vcgOrg}','AL Investor','al@real.com','verified','AL') returning id`)).rows[0].id;
+const nc2 = (await db.query(`insert into investors (organization_id,display_name,email,accreditation_status,home_state) values ('${vcgOrg}','NC Two','nc2@real.com','verified','NC') returning id`)).rows[0].id;
+const noState = (await db.query(`insert into investors (organization_id,display_name,email,accreditation_status) values ('${vcgOrg}','Mystery','m@real.com','verified') returning id`)).rows[0].id;
+
+// 2026-10-01 is a Thursday; +15 = Fri 10/16. 2026-10-03 (Sat) +15 = Sun 10/18 -> Mon 10/19.
+await as(owner, `insert into commitments (organization_id,fund_id,investor_id,amount,status,signed_at) values ('${vcgOrg}','${f3}','${ncInv}',50000,'accepted','2026-10-01')`, 'aal2');
+let items = (await as(owner, `select kind, state, due_date::text d from compliance_items where fund_id='${f3}' order by kind, state`)).rows;
+ok(items.length === 2 && items.find(i => i.kind === 'form_d_initial').d === '2026-10-16', 'first acceptance creates Form D due first sale + 15 days');
+ok(items.find(i => i.kind === 'state_notice' && i.state === 'NC'), 'first NC investor creates NC notice reminder');
+await as(owner, `insert into commitments (organization_id,fund_id,investor_id,amount,status,signed_at) values ('${vcgOrg}','${f3}','${nc2}',50000,'accepted','2026-10-05')`, 'aal2');
+await as(owner, `insert into commitments (organization_id,fund_id,investor_id,amount,status,signed_at) values ('${vcgOrg}','${f3}','${alInv}',50000,'accepted','2026-10-03')`, 'aal2');
+items = (await as(owner, `select kind, state, due_date::text d from compliance_items where fund_id='${f3}'`)).rows;
+ok(items.filter(i => i.kind === 'form_d_initial').length === 1, 'Form D created only once');
+ok(items.filter(i => i.state === 'NC').length === 1, 'second NC investor adds no duplicate');
+ok(items.find(i => i.state === 'AL').d === '2026-10-19', 'weekend due date moves to Monday');
+await as(owner, `insert into commitments (organization_id,fund_id,investor_id,amount,status,signed_at) values ('${vcgOrg}','${f3}','${noState}',50000,'accepted','2026-10-06')`, 'aal2');
+ok((await db.query(`select count(*)::int n from compliance_items where fund_id='${f3}' and state='??'`)).rows[0].n === 1, 'unknown state creates a fix-me item');
+await as(owner, `insert into commitments (organization_id,fund_id,investor_id,amount,status) values ('${vcgOrg}','${f3}','${noState}',50000,'pending')`, 'aal2');
+ok((await db.query(`select count(*)::int n from compliance_items where fund_id='${f3}'`)).rows[0].n === 4, 'pending commitments create nothing');
+
+const fd = (await db.query(`select id from compliance_items where fund_id='${f3}' and kind='form_d_initial'`)).rows[0].id;
+await as(ir, `update compliance_items set status='done', completed_on='2026-10-14', reference='0001234567-26-000001' where id='${fd}'`);
+const amend = (await db.query(`select due_date::text d from compliance_items where fund_id='${f3}' and kind='form_d_amendment'`)).rows;
+ok(amend.length === 1 && amend[0].d === '2027-10-14', 'filing Form D schedules the annual amendment');
+ok((await as(lpA, `select * from compliance_items`)).rows.length === 0, 'investors cannot see compliance items');
+ok((await as(cns, `select * from compliance_items`)).rows.length === 0, 'counsel role does not see the calendar (staff only)');
+threw = false; try { await as(owner, `delete from compliance_items where id='${fd}'`); } catch { threw = true; }
+ok((await db.query(`select count(*)::int n from compliance_items where id='${fd}'`)).rows[0].n === 1, 'auto-generated items cannot be deleted');
+
+// ── Document tracking ──
+const ppmDoc = (await db.query(`select id from documents where title='PPM' limit 1`)).rows[0].id;
+const ncUser = '99999999-9999-9999-9999-999999999999';
+await db.exec(`insert into auth.users (id,email) values ('${ncUser}','nc@real.com')`);
+await as(owner, `select link_portal_user('${ncInv}','nc@real.com')`, 'aal2');
+await db.exec(`insert into document_access_log (organization_id,document_id,user_id) values ('${vcgOrg}','${ppmDoc}','${ncUser}'),('${vcgOrg}','${ppmDoc}','${ncUser}')`);
+const opens = (await as(ir, `select investor_name, opens from document_opens where document_id='${ppmDoc}'`)).rows;
+ok(opens.length === 1 && opens[0].opens === 2 && opens[0].investor_name === 'NC Investor', 'per-investor open counts');
+ok((await as(ncUser, `select * from document_opens`)).rows.length === 0, 'investors cannot see who opened what');

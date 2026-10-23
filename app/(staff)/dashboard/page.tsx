@@ -34,6 +34,8 @@ export default async function Dashboard() {
     (i) => ['soft_circled', 'docs_sent', 'committed'].includes(i.stage) && i.accreditation_status !== 'verified',
   );
   const terms = (fund?.terms ?? {}) as Record<string, string | null>;
+  const soon = addDays(today, 30);
+  const { data: dueItems } = await supabase.from('compliance_items').select('id, title, due_date').eq('organization_id', orgId).eq('status', 'open').lte('due_date', soon).order('due_date');
 
   return (
     <div className="stack">
@@ -44,6 +46,14 @@ export default async function Dashboard() {
         </p>
         {!fund && <Link href="/funds/new" className="btn" style={{ marginTop: 12 }}>Create your first fund</Link>}
       </div>
+
+      {(dueItems?.length ?? 0) > 0 && (
+        <div className={`alert ${dueItems!.some((d) => d.due_date < today) ? 'error' : 'ok'}`} style={{ marginBottom: 0 }}>
+          <strong>Compliance:</strong>{' '}
+          {dueItems!.slice(0, 3).map((d) => `${d.title} (due ${d.due_date})`).join(' · ')}
+          {dueItems!.length > 3 ? ` and ${dueItems!.length - 3} more` : ''} · <Link href="/compliance">Open calendar →</Link>
+        </div>
+      )}
 
       <div className="grid g4">
         <div className="card kpi">

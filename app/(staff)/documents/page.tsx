@@ -19,6 +19,8 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
     supabase.from('investors').select('id, display_name').eq('organization_id', orgId).order('display_name'),
     supabase.from('document_access_log').select('document_id').eq('organization_id', orgId),
   ]);
+  const { data: openers } = await supabase.from('document_opens').select('document_id, investor_name, opens, last_opened').eq('organization_id', orgId);
+  const openedBy = (id: string) => (openers ?? []).filter((o) => o.document_id === id).sort((a, b) => b.last_opened.localeCompare(a.last_opened));
   const name = (id: string | null) => investors?.find((i) => i.id === id)?.display_name ?? '';
   const viewCount = (id: string) => (views ?? []).filter((v) => v.document_id === id).length;
   const catLabel = (k: string) => DOC_CATEGORIES.find(([c]) => c === k)?.[1] ?? k;
@@ -72,7 +74,15 @@ export default async function DocumentsPage({ searchParams }: { searchParams: Pr
                   <td><a href={`/files/${d.id}`} target="_blank" rel="noopener">{d.title}</a></td>
                   <td className="muted">{catLabel(d.category)}</td>
                   <td><span className={`pill ${tone}`}>{vl}</span> <span className="small muted">{name(d.investor_id)}</span></td>
-                  <td className="num">{viewCount(d.id)}</td>
+                  <td className="num">
+                    {viewCount(d.id)}
+                    {openedBy(d.id).length > 0 && (
+                      <details className="small" style={{ textAlign: 'left' }}>
+                        <summary style={{ cursor: 'pointer' }}>{openedBy(d.id).length} investor(s)</summary>
+                        {openedBy(d.id).map((o) => <div key={o.investor_name}>{o.investor_name}: {o.opens}× · {new Date(o.last_opened).toLocaleDateString()}</div>)}
+                      </details>
+                    )}
+                  </td>
                   <td className="muted small">{new Date(d.created_at).toLocaleDateString()}</td>
                   <td className="num">
                     {CAPITAL_ROLES.includes(role) && (

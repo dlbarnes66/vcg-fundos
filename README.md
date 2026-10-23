@@ -28,7 +28,7 @@ Internal fund-management platform for Venture Collective Group, built multi-tena
 ## Setup (about 15 minutes)
 
 1. **Create a new Supabase project** for this app. Don't reuse the vcgnow portal project; keep investor financial data separate.
-2. **Run the schema.** Supabase → SQL Editor → run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_crm_handoff.sql`, `0003_team_and_funds.sql`, `0004_document_studio.sql`, `0005_investor_onboarding.sql`, `0006_mfa_notify_cleanup.sql`, `0007_counsel_role.sql`, `0008_counsel_review.sql`). Then run `supabase/seed.sql` (this only defines the demo function).
+2. **Run the schema.** Supabase → SQL Editor → run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_crm_handoff.sql`, `0003_team_and_funds.sql`, `0004_document_studio.sql`, `0005_investor_onboarding.sql`, `0006_mfa_notify_cleanup.sql`, `0007_counsel_role.sql`, `0008_counsel_review.sql`, `0009_compliance_tracking.sql`). Then run `supabase/seed.sql` (this only defines the demo function).
 3. **Create your login.** Authentication → Users → Add user (email + password, auto-confirm).
 4. **Make yourself owner.** In the SQL editor:
    ```sql
@@ -83,6 +83,12 @@ curl -X POST "$FUNDOS_URL/api/intake" \
 - Each handoff is logged on the investor's activity timeline.
 - Only a SHA-256 hash of the key is stored. Revoke a key in Settings and calls with it fail immediately.
 
+## Compliance calendar and document tracking
+
+- **Compliance** (sidebar): accepting the first commitment in a fund creates **File Form D** (15 days after first sale, moved off weekends). The first accepted investor from each state creates a **state notice filing** reminder, to confirm with counsel, since some states need nothing. Recording Form D as filed schedules the **annual amendment**. Add your own deadlines, record filing numbers, or mark items *Not required* with a note. Overdue and upcoming items show on the dashboard.
+- Investors give their **home state** in onboarding (step 1); staff can set it on the investor record.
+- **Who opened what:** each investor record lists the portal documents they opened (count, first and last). The data room shows which investors opened each document.
+
 ## Counsel review, audit log and exports
 
 - **Outside counsel:** invite your attorney from **Team** with the role *Outside counsel*. They sign in to a separate review area showing only fund terms, Document Studio drafts, consistency checks and offering documents, never investors, commitments, capital or wire instructions. They can comment on any section, download Word, and **approve a version under their own login** (blocked while anything is empty or flagged). Comments also appear on the Studio page for your team.
@@ -126,7 +132,7 @@ Requires `ANTHROPIC_API_KEY` in Vercel (type **Secret**). Optional: `ANTHROPIC_M
 ```bash
 npm test
 ```
-Runs the pref-return and money unit tests, plus 114 database security tests against an in-memory Postgres: tenant isolation, LP visibility, storage access, append-only capital, reversals, the 506(c) acceptance rule, portal-linking permissions and the CRM OS handoff (keys, dedupe, revocation), team roles and fund-term permissions.
+Runs the pref-return and money unit tests, plus 127 database security tests against an in-memory Postgres: tenant isolation, LP visibility, storage access, append-only capital, reversals, the 506(c) acceptance rule, portal-linking permissions and the CRM OS handoff (keys, dedupe, revocation), team roles and fund-term permissions.
 
 ## Deploying
 
