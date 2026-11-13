@@ -35,6 +35,8 @@ export default async function Dashboard() {
   );
   const terms = (fund?.terms ?? {}) as Record<string, string | null>;
   const soon = addDays(today, 30);
+  const { data: openCalls } = await supabase.from('capital_call_status').select('outstanding').eq('organization_id', orgId).gt('outstanding', 0);
+  const callOutstanding = (openCalls ?? []).reduce((t, r) => t + Number(r.outstanding), 0);
   const { data: dueItems } = await supabase.from('compliance_items').select('id, title, due_date').eq('organization_id', orgId).eq('status', 'open').lte('due_date', soon).order('due_date');
 
   return (
@@ -70,7 +72,7 @@ export default async function Dashboard() {
         <div className="card kpi">
           <div className="label">Capital contributed</div>
           <div className="value">{fmtMoney(contributed, true)}</div>
-          <div className="hint">Unfunded: {fmtMoney(committed - contributed, true)}</div>
+          <div className="hint">Unfunded: {fmtMoney(committed - contributed, true)}{callOutstanding > 0 && <> · <Link href="/calls">{fmtMoney(callOutstanding, true)} called, not yet received</Link></>}</div>
         </div>
         <div className="card kpi">
           <div className="label">Distributed to LPs</div>

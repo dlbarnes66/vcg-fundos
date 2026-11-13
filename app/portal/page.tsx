@@ -21,6 +21,10 @@ export default async function Portal({ searchParams }: { searchParams: Promise<{
     supabase.from('capital_transactions').select('id, fund_id, kind, amount, effective_date, reverses_id').order('effective_date', { ascending: false }),
     supabase.from('documents').select('id, title, category, created_at').order('created_at', { ascending: false }),
   ]);
+  const [{ data: calls }, { data: callMeta }] = await Promise.all([
+    supabase.from('capital_call_status').select('call_id, outstanding, funded, notice_document_id'),
+    supabase.from('capital_calls').select('id, call_number, fund_id, due_date, purpose'),
+  ]);
   const [{ data: subs }, { data: wires }] = await Promise.all([
     supabase.from('subscriptions').select('id, fund_id, status, amount, review_note'),
     supabase.from('fund_wire_instructions').select('fund_id, instructions, verify_phone'),
@@ -68,6 +72,21 @@ export default async function Portal({ searchParams }: { searchParams: Promise<{
               {sb.status === 'changes_requested' && <p className="small" style={{ color: 'var(--bad)' }}>{sb.review_note}</p>}
               <p className="small muted">{sb.amount ? `Amount: ${fmtMoney(sb.amount)}` : 'Investor information, W-9, offering documents, accreditation, and signature.'}</p>
               <Link className="btn" href={`/portal/subscribe/${sb.id}`}>{cta}</Link>
+            </div>
+          );
+        })}
+
+        {(calls ?? []).filter((c) => Number(c.outstanding) > 0).map((c) => {
+          const meta = callMeta?.find((m) => m.id === c.call_id);
+          return (
+            <div className="card" key={c.call_id} style={{ borderColor: '#f0e0a8' }}>
+              <div className="row between">
+                <h2 style={{ margin: 0 }}>Capital Call No. {meta?.call_number}: {fundName(meta?.fund_id ?? '')}</h2>
+                <span className="pill warn">Due {meta?.due_date}</span>
+              </div>
+              <p className="small" style={{ marginBottom: 6 }}>Amount due: <strong>{fmtMoney(c.outstanding)}</strong>{Number(c.funded) > 0 ? ` (received so far ${fmtMoney(c.funded)})` : ''}</p>
+              <p className="small muted" style={{ marginTop: 0 }}>{meta?.purpose}</p>
+              {c.notice_document_id && <a href={`/files/${c.notice_document_id}`} target="_blank" rel="noopener" className="small">Download notice (PDF)</a>}
             </div>
           );
         })}

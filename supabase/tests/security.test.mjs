@@ -17,7 +17,7 @@ await db.exec(`
   alter table storage.objects enable row level security;
   create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name, '/') $$;
 `);
-for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql', '0006_mfa_notify_cleanup.sql', '0007_counsel_role.sql', '0008_counsel_review.sql', '0009_compliance_tracking.sql', '0010_lpa_category.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
+for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql', '0006_mfa_notify_cleanup.sql', '0007_counsel_role.sql', '0008_counsel_review.sql', '0009_compliance_tracking.sql', '0010_lpa_category.sql', '0011_capital_calls.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
 await db.exec(readFileSync(`${root}/supabase/seed.sql`, 'utf8'));
 
 const owner = '11111111-1111-1111-1111-111111111111';
@@ -405,3 +405,34 @@ ok((await as(ncUser, `select * from document_opens`)).rows.length === 0, 'invest
 await db.exec(`insert into documents (organization_id,title,category,visibility,storage_path) values ('${vcgOrg}','Fund I LPA','lpa','all_investors','${vcgOrg}/lpa.pdf')`);
 ok((await as(cns, `select title from documents where category='lpa'`)).rows.length === 1, 'counsel can see the LPA category');
 ok((await as(ncUser, `select title from documents where category='lpa'`)).rows.length === 1, 'investors with portal access can read a shared LPA');
+
+// ── Capital calls ──
+// Fund III: accepted 50k each for NC, NC Two, AL, Mystery = 200k committed, NC has 0 contributed.
+const fund3 = f3;
+threw = false; try { await as(ir, `select create_capital_call('${fund3}', 1000, current_date, current_date + 10, 'Acquisition')`); } catch { threw = true; }
+ok(threw, 'IR cannot create a capital call');
+threw = false; try { await as(owner, `select create_capital_call('${fund3}', 999999, current_date, current_date + 10, 'Too much')`, 'aal2'); } catch { threw = true; }
+ok(threw, 'cannot call more than total unfunded');
+// Prefund NC Investor 20k so unfunded differs: NC 30k, others 50k => 180k unfunded.
+await db.exec(`insert into capital_transactions (organization_id,fund_id,investor_id,kind,amount,effective_date) values ('${vcgOrg}','${fund3}','${ncInv}','contribution',20000,current_date)`);
+const callId = (await as(owner, `select create_capital_call('${fund3}', 100000.01, '2026-11-13', '2026-11-27', 'Acquisition of 24-unit property') id`, 'aal2')).rows[0].id;
+const allocs = (await db.query(`select investor_id, amount::text a, unfunded_basis::text u from capital_call_allocations where call_id='${callId}'`)).rows;
+const totalCents = allocs.reduce((t, r) => t + Math.round(Number(r.a) * 100), 0);
+ok(allocs.length === 4 && totalCents === 10000001, `allocations sum exactly to the call (${allocs.length} investors)`);
+ok(allocs.every(r => Number(r.a) <= Number(r.u)), 'nobody is called for more than they owe');
+const nc = allocs.find(r => r.investor_id === ncInv);
+ok(Math.abs(Number(nc.a) - 100000.01 * 30000 / Number(allocs.reduce((t, r) => t + Number(r.u), 0))) < 0.02, 'pro rata by unfunded commitment');
+ok((await as(ncUser, `select * from capital_calls`)).rows.length === 0, 'LP cannot see a draft call');
+threw = false; try { await as(owner, `insert into capital_transactions (organization_id,fund_id,investor_id,kind,amount,effective_date,posted_by,capital_call_id) values ('${vcgOrg}','${fund3}','${ncInv}','contribution',1,current_date,'${owner}','${callId}')`, 'aal2'); } catch { threw = true; }
+ok(threw, 'cannot record funding against a draft call');
+await as(owner, `select issue_capital_call('${callId}')`, 'aal2');
+ok((await as(ncUser, `select * from capital_calls`)).rows.length === 1, 'LP sees the issued call');
+ok((await as(ncUser, `select * from capital_call_allocations`)).rows.length === 1, 'LP sees only their own allocation');
+ok((await as(lpE, `select * from capital_call_allocations`)).rows.length === 0, 'an LP not in the call sees nothing');
+await as(owner, `insert into capital_transactions (organization_id,fund_id,investor_id,kind,amount,effective_date,posted_by,capital_call_id) values ('${vcgOrg}','${fund3}','${ncInv}','contribution',${nc.a},current_date,'${owner}','${callId}')`, 'aal2');
+const st = (await as(ncUser, `select funded::text f, outstanding::text o from capital_call_status where call_id='${callId}'`)).rows[0];
+ok(Number(st.f) === Number(nc.a) && Number(st.o) === 0, 'funding recorded against the call shows as paid');
+threw = false; try { await as(owner, `insert into capital_transactions (organization_id,fund_id,investor_id,kind,amount,effective_date,posted_by,capital_call_id) values ('${vcgOrg}','${fund3}','${realInv}','contribution',1,current_date,'${owner}','${callId}')`, 'aal2'); } catch { threw = true; }
+ok(threw, 'cannot link funding from an investor not in the call');
+threw = false; try { await as(owner, `select cancel_capital_call('${callId}')`, 'aal2'); } catch { threw = true; }
+ok(threw, 'cannot cancel a call that has received funds');
