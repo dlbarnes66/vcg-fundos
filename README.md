@@ -103,7 +103,7 @@ curl -X POST "$FUNDOS_URL/api/intake" \
 
 ## Investor onboarding
 
-Investors subscribe in their portal in five steps: **investor information**, **W-9 upload**, **read the offering documents**, **accreditation verification letter**, and **e-signature**. Then you review and approve.
+Investors subscribe in their portal in five steps: **investor information**, **W-9** (filled in and e-signed online as a substitute Form W-9, or uploaded), **read the offering documents**, **accreditation verification letter**, and **e-signature**. Then you review and approve.
 
 **Set up once per fund** (Funds → your fund → *Investor onboarding*):
 1. Upload the offering documents (PPM, LPA, fact sheet) to the Data room with category **Offering** and visibility **All investors**.

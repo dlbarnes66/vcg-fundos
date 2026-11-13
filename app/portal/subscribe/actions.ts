@@ -7,6 +7,7 @@ import { OFFERING_CATEGORIES } from '@/lib/labels';
 import { errorText } from '@/lib/flash';
 import { parseAmount } from '@/lib/money';
 import { buildSignedPacket, sha256 } from '@/lib/esign';
+import { buildW9Pdf, type W9Input } from '@/lib/w9';
 import { sendEmail } from '@/lib/notify';
 
 const ALLOWED = new Set(['application/pdf', 'image/png', 'image/jpeg']);
@@ -162,4 +163,61 @@ export async function submitSubscription(subId: string) {
   } catch (e) { err = errorText(e); }
   if (err) done(subId, 'submit', err);
   redirect('/portal?submitted=1');
+}
+
+/**
+ * Completes and e-signs a substitute Form W-9. The TIN goes straight into the PDF in the
+ * investor's private folder and is never stored in the database or logged.
+ */
+export async function signW9(subId: string, formData: FormData) {
+  let err: string | undefined;
+  try {
+    const { supabase, user, sub } = await ctx(subId);
+    if (formData.get('consent') !== 'yes') throw new Error('Tick the box to sign electronically under penalties of perjury');
+    const signatureName = s(formData, 'signature_name');
+    if (signatureName.length < 3) throw new Error('Type your full name to sign');
+    const { data: fund } = await supabase.from('funds').select('name, terms').eq('id', sub.fund_id).single();
+    const requester = ((fund?.terms as Record<string, string> | undefined)?.fund_entity || fund?.name) ?? 'The Fund';
+
+    const input: W9Input = {
+      name: s(formData, 'w9_name'),
+      businessName: s(formData, 'business_name') || null,
+      taxClass: s(formData, 'tax_class'),
+      otherClass: s(formData, 'other_class') || null,
+      foreignPartners: formData.get('foreign_partners') === 'yes',
+      exemptPayeeCode: s(formData, 'exempt_payee_code') || null,
+      fatcaCode: s(formData, 'fatca_code') || null,
+      address: s(formData, 'w9_address'),
+      cityStateZip: s(formData, 'w9_city'),
+      tinType: s(formData, 'tin_type') === 'ein' ? 'ein' : 'ssn',
+      tin: String(formData.get('tin') ?? ''),
+      backupWithholdingNotified: formData.get('backup_withholding') === 'yes',
+      requester,
+    };
+    const signedAt = new Date().toISOString();
+    const { bytes, tinLast4 } = await buildW9Pdf(input, { signatureName, signedAtIso: signedAt });
+
+    const h = await headers();
+    const packet = await buildSignedPacket(bytes, {
+      fundName: requester, documentTitle: 'Form W-9 (Substitute)', templateSha256: sha256(bytes),
+      investorLegalName: input.name, signatureName, signerTitle: sub.signer_title, signerEmail: user.email ?? '',
+      amount: null, signedAtIso: signedAt,
+      ip: (h.get('x-forwarded-for') ?? '').split(',')[0].trim(), userAgent: h.get('user-agent') ?? '',
+    });
+
+    const path = `${sub.organization_id}/lp/${sub.investor_id}/${crypto.randomUUID()}-w9-signed.pdf`;
+    const { error: upErr } = await supabase.storage.from('documents').upload(path, new Blob([new Uint8Array(packet)], { type: 'application/pdf' }), { contentType: 'application/pdf' });
+    if (upErr) throw upErr;
+    const { data: doc, error: dErr } = await supabase.from('documents').insert({
+      organization_id: sub.organization_id, fund_id: sub.fund_id, investor_id: sub.investor_id,
+      title: `W-9 (signed electronically, TIN ending ${tinLast4})`, category: 'tax', visibility: 'investor',
+      storage_path: path, size_bytes: packet.length, uploaded_by: user.id,
+    }).select('id').single();
+    if (dErr) throw dErr;
+    const { error } = await supabase.rpc('lp_attach', { p_sub: subId, p_kind: 'w9', p_document: doc.id });
+    if (error) throw error;
+  } catch (e) {
+    err = errorText(e);
+  }
+  done(subId, 'w9', err);
 }

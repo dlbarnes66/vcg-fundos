@@ -13,7 +13,7 @@ export type SignatureEvidence = {
   signatureName: string;
   signerTitle?: string | null;
   signerEmail: string;
-  amount: string;
+  amount?: string | null;
   signedAtIso: string;
   ip: string;
   userAgent: string;
@@ -56,7 +56,7 @@ export async function buildSignedPacket(template: Uint8Array, e: SignatureEviden
   line('Investor', e.investorLegalName);
   line('Signed by', `${e.signatureName}${e.signerTitle ? `, ${e.signerTitle}` : ''}`);
   line('Account email', e.signerEmail);
-  line('Subscription amount', e.amount);
+  if (e.amount) line('Subscription amount', e.amount);
   line('Signed at (UTC)', new Date(e.signedAtIso).toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC'));
   line('IP address', e.ip || 'not available');
   line('Device', e.userAgent || 'not available');

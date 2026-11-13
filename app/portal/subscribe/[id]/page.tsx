@@ -4,7 +4,10 @@ import { createClient } from '@/lib/supabase/server';
 import { fmtMoney } from '@/lib/money';
 import { INVESTOR_TYPES, US_STATES, OFFERING_CATEGORIES } from '@/lib/labels';
 import { ESIGN_CONSENT } from '@/lib/esign';
-import { saveProfile, uploadFile, acknowledgeDocs, setAccreditation, signSubscription, submitSubscription } from '../actions';
+import { saveProfile, uploadFile, acknowledgeDocs, setAccreditation, signSubscription, submitSubscription, signW9 } from '../actions';
+import { TAX_CLASSES, W9_CERTIFICATIONS, W9_IRS_CONSENT_NOTE } from '@/lib/w9';
+
+const W9_DEFAULT: Record<string, string> = { individual: 'individual', joint: 'individual', trust: 'trust_estate', partnership: 'partnership', corporation: 'c_corp' };
 
 export const maxDuration = 60;
 
@@ -112,11 +115,74 @@ export default async function SubscribePage({ params, searchParams }: Props) {
         {/* 2. W-9 */}
         <section className="card" id="w9">
           <Step n={2} title="Tax form (W-9)" done={steps.w9} />
-          <p className="small muted" style={{ marginTop: -4 }}>
-            Download the IRS Form W-9 from <a href="https://www.irs.gov/pub/irs-pdf/fw9.pdf" target="_blank" rel="noopener noreferrer">irs.gov</a>, fill it in and sign it, then upload it here. It&apos;s stored privately and only the fund team can see it.
-          </p>
-          {w9 && <p className="small">On file: <a href={`/files/${w9.id}`} target="_blank" rel="noopener">{w9.title}</a></p>}
-          {editable && <UploadForm action={uploadFile.bind(null, id, 'w9')} label={w9 ? 'Replace W-9' : 'Upload W-9'} />}
+          {w9 && <p className="small">On file: <a href={`/files/${w9.id}`} target="_blank" rel="noopener">{w9.title}</a>. You can replace it below.</p>}
+          {editable && (
+            <>
+              <details open={!w9}>
+                <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Fill out and sign online (recommended, about 2 minutes)</summary>
+                <form action={signW9.bind(null, id)} className="stack" style={{ gap: 12, marginTop: 12 }}>
+                  <div className="form-grid">
+                    <label>1. Name on your income tax return<input name="w9_name" required defaultValue={sub.legal_name ?? ''} /></label>
+                    <label>2. Business / disregarded entity name (if different)<input name="business_name" /></label>
+                    <label>3a. Federal tax classification
+                      <select name="tax_class" required defaultValue={W9_DEFAULT[sub.investor_type ?? ''] ?? ''}>
+                        <option value="" disabled>Choose…</option>
+                        {TAX_CLASSES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      </select>
+                    </label>
+                    <label>If Other, describe<input name="other_class" /></label>
+                  </div>
+                  <div className="form-grid">
+                    <label>5. Street address<input name="w9_address" required defaultValue={(sub.address ?? '').split('\n')[0]} /></label>
+                    <label>6. City, state, ZIP<input name="w9_city" required placeholder="Mobile, AL 36602" /></label>
+                  </div>
+                  <div className="form-grid">
+                    <label>Taxpayer ID type
+                      <select name="tin_type" defaultValue={['individual', 'joint'].includes(sub.investor_type ?? '') ? 'ssn' : 'ein'}>
+                        <option value="ssn">Social Security number (SSN)</option>
+                        <option value="ein">Employer ID number (EIN)</option>
+                      </select>
+                    </label>
+                    <label>SSN or EIN<input name="tin" required inputMode="numeric" autoComplete="off" placeholder="9 digits" maxLength={11} /></label>
+                  </div>
+                  <details className="small">
+                    <summary style={{ cursor: 'pointer' }}>Less common (most investors skip this)</summary>
+                    <div className="form-grid" style={{ marginTop: 8 }}>
+                      <label>4. Exempt payee code<input name="exempt_payee_code" maxLength={4} /></label>
+                      <label>4. FATCA exemption code<input name="fatca_code" maxLength={4} /></label>
+                    </div>
+                    <label className="row" style={{ flexDirection: 'row', fontWeight: 400, color: 'var(--ink)', marginTop: 8 }}>
+                      <input type="checkbox" name="foreign_partners" value="yes" /> 3b. Partnership, trust or estate with foreign partners, owners or beneficiaries
+                    </label>
+                    <label className="row" style={{ flexDirection: 'row', fontWeight: 400, color: 'var(--ink)', marginTop: 6 }}>
+                      <input type="checkbox" name="backup_withholding" value="yes" /> The IRS has notified me that I am currently subject to backup withholding (crosses out certification 2)
+                    </label>
+                  </details>
+                  <div className="note">
+                    <strong>Under penalties of perjury, I certify that:</strong>
+                    <ol style={{ margin: '6px 0 6px 18px', padding: 0 }}>{W9_CERTIFICATIONS.map((c) => <li key={c}>{c}</li>)}</ol>
+                    <span className="small">{W9_IRS_CONSENT_NOTE}</span>
+                  </div>
+                  <div className="form-grid">
+                    <label>Type your full name to sign<input name="signature_name" required minLength={3} defaultValue={sub.signer_name ?? sub.legal_name ?? ''} style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic' }} /></label>
+                  </div>
+                  <label className="row" style={{ flexDirection: 'row', fontWeight: 400, color: 'var(--ink)', alignItems: 'flex-start' }}>
+                    <input type="checkbox" name="consent" value="yes" required style={{ marginTop: 3 }} /> I agree to sign this Form W-9 electronically, and my typed name is my signature under penalties of perjury.
+                  </label>
+                  <div><button type="submit">Sign W-9</button></div>
+                  <p className="small muted" style={{ margin: 0 }}>
+                    Your SSN/EIN goes only into the signed PDF, which is stored privately and visible only to you and the fund team. It isn&apos;t saved anywhere else.
+                    IRAs: use the custodian&apos;s name and EIN. Grantor trusts: ask your tax adviser which number to use.
+                  </p>
+                </form>
+              </details>
+              <details style={{ marginTop: 10 }}>
+                <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Or upload a W-9 you already signed</summary>
+                <p className="small muted">Download the IRS Form W-9 from <a href="https://www.irs.gov/pub/irs-pdf/fw9.pdf" target="_blank" rel="noopener noreferrer">irs.gov</a>, fill it in and sign it, then upload it here.</p>
+                <UploadForm action={uploadFile.bind(null, id, 'w9')} label={w9 ? 'Replace W-9' : 'Upload W-9'} />
+              </details>
+            </>
+          )}
         </section>
 
         {/* 3. Offering documents */}
