@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { fmtMoney } from '@/lib/money';
-import { INVESTOR_TYPES, US_STATES } from '@/lib/labels';
+import { INVESTOR_TYPES, US_STATES, OFFERING_CATEGORIES } from '@/lib/labels';
 import { ESIGN_CONSENT } from '@/lib/esign';
 import { saveProfile, uploadFile, acknowledgeDocs, setAccreditation, signSubscription, submitSubscription } from '../actions';
 
@@ -30,7 +30,7 @@ export default async function SubscribePage({ params, searchParams }: Props) {
   if (!sub) notFound();
   const [{ data: fund }, { data: offering }, { data: w9 }, { data: accDoc }, { data: packet }] = await Promise.all([
     supabase.from('funds').select('id, name, min_commitment, subscription_doc_id').eq('id', sub.fund_id).single(),
-    supabase.from('documents').select('id, title').eq('organization_id', sub.organization_id).eq('category', 'offering').eq('visibility', 'all_investors'),
+    supabase.from('documents').select('id, title').eq('organization_id', sub.organization_id).in('category', OFFERING_CATEGORIES).eq('visibility', 'all_investors'),
     sub.w9_document_id ? supabase.from('documents').select('id, title').eq('id', sub.w9_document_id).maybeSingle() : Promise.resolve({ data: null }),
     sub.accreditation_document_id ? supabase.from('documents').select('id, title').eq('id', sub.accreditation_document_id).maybeSingle() : Promise.resolve({ data: null }),
     sub.signed_packet_id ? supabase.from('documents').select('id, title').eq('id', sub.signed_packet_id).maybeSingle() : Promise.resolve({ data: null }),

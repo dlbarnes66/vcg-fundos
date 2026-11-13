@@ -3,6 +3,7 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { OFFERING_CATEGORIES } from '@/lib/labels';
 import { errorText } from '@/lib/flash';
 import { parseAmount } from '@/lib/money';
 import { buildSignedPacket, sha256 } from '@/lib/esign';
@@ -75,7 +76,7 @@ export async function acknowledgeDocs(subId: string, formData: FormData) {
     if (formData.get('confirm') !== 'yes') throw new Error('Tick the box to confirm you have read the documents');
     const { data: docs } = await supabase
       .from('documents').select('id, title')
-      .eq('organization_id', sub.organization_id).eq('category', 'offering').eq('visibility', 'all_investors');
+      .eq('organization_id', sub.organization_id).in('category', OFFERING_CATEGORIES).eq('visibility', 'all_investors');
     const { error } = await supabase.rpc('lp_ack_documents', { p_sub: subId, p_docs: docs ?? [] });
     if (error) throw error;
   } catch (e) { err = errorText(e); }

@@ -41,8 +41,12 @@ export const TXN_KINDS = [
 ] as const;
 export const txnLabel = (s: string) => (s === 'reversal' ? 'Reversal' : TXN_KINDS.find(([k]) => k === s)?.[1] ?? s);
 
+/** Categories investors must read before subscribing (and that counsel can see). */
+export const OFFERING_CATEGORIES = ['offering', 'lpa'];
+
 export const DOC_CATEGORIES = [
-  ['offering', 'Offering (PPM, fact sheet)'],
+  ['offering', 'Offering (PPM, fact sheet, deck)'],
+  ['lpa', 'LPA / Operating Agreement'],
   ['subscription', 'Subscription docs'],
   ['report', 'Quarterly report'],
   ['tax', 'Tax (K-1, W-9)'],

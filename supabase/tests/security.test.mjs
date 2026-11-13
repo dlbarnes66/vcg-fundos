@@ -17,7 +17,7 @@ await db.exec(`
   alter table storage.objects enable row level security;
   create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name, '/') $$;
 `);
-for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql', '0006_mfa_notify_cleanup.sql', '0007_counsel_role.sql', '0008_counsel_review.sql', '0009_compliance_tracking.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
+for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql', '0006_mfa_notify_cleanup.sql', '0007_counsel_role.sql', '0008_counsel_review.sql', '0009_compliance_tracking.sql', '0010_lpa_category.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
 await db.exec(readFileSync(`${root}/supabase/seed.sql`, 'utf8'));
 
 const owner = '11111111-1111-1111-1111-111111111111';
@@ -400,3 +400,8 @@ await db.exec(`insert into document_access_log (organization_id,document_id,user
 const opens = (await as(ir, `select investor_name, opens from document_opens where document_id='${ppmDoc}'`)).rows;
 ok(opens.length === 1 && opens[0].opens === 2 && opens[0].investor_name === 'NC Investor', 'per-investor open counts');
 ok((await as(ncUser, `select * from document_opens`)).rows.length === 0, 'investors cannot see who opened what');
+
+// ── LPA category ──
+await db.exec(`insert into documents (organization_id,title,category,visibility,storage_path) values ('${vcgOrg}','Fund I LPA','lpa','all_investors','${vcgOrg}/lpa.pdf')`);
+ok((await as(cns, `select title from documents where category='lpa'`)).rows.length === 1, 'counsel can see the LPA category');
+ok((await as(ncUser, `select title from documents where category='lpa'`)).rows.length === 1, 'investors with portal access can read a shared LPA');

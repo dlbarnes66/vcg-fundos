@@ -37,7 +37,7 @@ export default async function FundPage({ params, searchParams }: Props) {
         <div>
           <h2>Investor onboarding</h2>
           <p className="small muted" style={{ margin: 0 }}>
-            Investors read every data-room document in the <strong>Offering</strong> category that&apos;s shared with all investors, then sign the subscription agreement below.
+            Investors read every data-room document in the <strong>Offering</strong> and <strong>LPA / Operating Agreement</strong> categories that&apos;s shared with all investors, then sign the subscription agreement below.
           </p>
         </div>
         <form action={setSubscriptionTemplate.bind(null, id)} className="form-grid">
