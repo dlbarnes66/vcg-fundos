@@ -14,9 +14,13 @@ export default async function InvestorsPage({ searchParams }: { searchParams: Se
     .from('investors')
     .select('id, display_name, investor_type, stage, target_amount, next_follow_up, accreditation_status')
     .eq('organization_id', orgId)
+    .is('held_at', null)
     .order('updated_at', { ascending: false });
   if (sp.q) query = query.ilike('display_name', `%${sp.q.replace(/[%_]/g, '')}%`);
-  const { data: investors } = await query;
+  const [{ data: investors }, { count: heldCount }] = await Promise.all([
+    query,
+    supabase.from('investors').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).not('held_at', 'is', null),
+  ]);
   const rows = investors ?? [];
   const today = new Date().toISOString().slice(0, 10);
   const stages = sp.show === 'all' ? STAGES : STAGES.filter(([k]) => k !== 'declined');
@@ -34,6 +38,7 @@ export default async function InvestorsPage({ searchParams }: { searchParams: Se
           <Link href={sp.show === 'all' ? '/investors' : '/investors?show=all'} className="small">
             {sp.show === 'all' ? 'Hide declined' : 'Show declined'}
           </Link>
+          <Link href="/investors/future" className="small">Future raise (506(b)) · {heldCount ?? 0}</Link>
         </form>
       </div>
       <Flash ok={sp.ok} error={sp.error} />

@@ -52,9 +52,12 @@ export async function purgeDemo(formData: FormData) {
   let n = 0;
   try {
     const { supabase, orgId } = await requireRole(['owner']);
+    const { data: docs } = await supabase.from('documents').select('storage_path, investors!inner(email)').eq('organization_id', orgId).ilike('investors.email', '%@example.com');
     const { data, error } = await supabase.rpc('purge_demo_data', { p_org: orgId, p_confirm: String(formData.get('confirm') ?? '') });
     if (error) throw error;
     n = Number(data ?? 0);
+    const paths = (docs ?? []).map((d) => d.storage_path);
+    if (paths.length) await supabase.storage.from('documents').remove(paths);
   } catch (e) {
     err = errorText(e);
   }

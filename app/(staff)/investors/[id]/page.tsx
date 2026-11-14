@@ -2,11 +2,11 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireStaff, WRITE_ROLES, CAPITAL_ROLES } from '@/lib/session';
 import { getFunds } from '@/lib/funds';
-import { STAGES, INVESTOR_TYPES, ACCREDITATION, US_STATES, txnLabel } from '@/lib/labels';
+import { STAGES, INVESTOR_TYPES, ACCREDITATION, US_STATES, HOLD_LABELS, txnLabel } from '@/lib/labels';
 import { fmtMoney } from '@/lib/money';
 import { Flash } from '@/lib/flash';
 import { prefEstimate, type CapitalEvent } from '@/lib/pref';
-import { updateInvestor, addActivity, addCommitment, setCommitmentStatus, invitePortal, sendPortalLink } from '../actions';
+import { updateInvestor, addActivity, addCommitment, setCommitmentStatus, invitePortal, sendPortalLink, holdForFutureRaise, returnToPipeline, deleteInvestor } from '../actions';
 import { InviteForm } from '@/app/invite-result';
 import { startSubscription } from '../../subscriptions/actions';
 
@@ -47,6 +47,11 @@ export default async function InvestorPage({ params, searchParams }: Props) {
         </p>
       </div>
       <Flash ok={sp.ok} error={sp.error} />
+      {inv.held_at && (
+        <div className="alert" style={{ background: '#eef3ff', border: '1px solid #c9d6f5' }}>
+          On the <Link href="/investors/future">future raise (506(b)) list</Link> since {new Date(inv.held_at).toLocaleDateString()}: {HOLD_LABELS[inv.held_reason ?? 'other']}. Not part of the current 506(c) pipeline.
+        </div>
+      )}
 
       {(accounts ?? []).map((a) => {
         const fund = funds.find((f) => f.id === a.fund_id);
@@ -129,6 +134,47 @@ export default async function InvestorPage({ params, searchParams }: Props) {
           </ul>
         </div>
       </div>
+
+
+      {canWrite && (
+        <form className="card" action={holdForFutureRaise.bind(null, id)}>
+          <div className="row between">
+            <h2 style={{ margin: 0 }}>Future raise (506(b))</h2>
+            {inv.held_at && <span className="pill">On the list</span>}
+          </div>
+          <p className="small muted">
+            For someone who can&apos;t join this 506(c) raise, for example not accredited or couldn&apos;t verify. Saving takes them off the pipeline and keeps them as a contact for a later 506(b) raise.
+            For a 506(b), each buyer must either not have come in through public advertising, or have a substantive relationship with you that started before the 506(b) raise begins (SEC Rule 152). Record the facts below; fund counsel decides who can be offered.
+          </p>
+          <div className="form-grid">
+            <label>Reason
+              <select name="held_reason" defaultValue={inv.held_reason ?? 'not_accredited'}>
+                {Object.entries(HOLD_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+            </label>
+            <label>First heard of VCG through public advertising?
+              <select name="first_contact_public" defaultValue={inv.first_contact_public == null ? '' : inv.first_contact_public ? 'yes' : 'no'}>
+                <option value="">Not sure</option>
+                <option value="yes">Yes (website, social, webinar, ad)</option>
+                <option value="no">No (personal network or referral)</option>
+              </select>
+            </label>
+            <label>Relationship established on<input type="date" name="relationship_established_on" defaultValue={inv.relationship_established_on ?? ''} /></label>
+            <label>Check back on<input type="date" name="next_follow_up" defaultValue={inv.next_follow_up ?? ''} /></label>
+          </div>
+          <label style={{ marginTop: 12 }}>How you know them, and how you reviewed their finances and experience
+            <textarea name="relationship_basis" defaultValue={inv.relationship_basis ?? ''} placeholder="e.g. Met at the Mobile VFW in 2024. Phone call 11/1: discussed income, net worth, past real estate investments." />
+          </label>
+          <div className="row" style={{ marginTop: 12 }}>
+            <button type="submit">{inv.held_at ? 'Save' : 'Save for future raise'}</button>
+          </div>
+        </form>
+      )}
+      {canWrite && inv.held_at && (
+        <form action={returnToPipeline.bind(null, id)} style={{ marginTop: -8 }}>
+          <button type="submit" className="ghost">Move back to the current pipeline</button>
+        </form>
+      )}
 
       <div className="card">
         <h2>Commitments</h2>
@@ -239,6 +285,19 @@ export default async function InvestorPage({ params, searchParams }: Props) {
             </>
           )}
         </div>
+      )}
+
+      {role === 'owner' && (
+        <form className="card stack" action={deleteInvestor.bind(null, id)} style={{ gap: 10, borderColor: '#ecc5c2' }}>
+          <h2 style={{ margin: 0 }}>Delete this investor</h2>
+          <p className="small muted" style={{ margin: 0 }}>
+            For test records and mistakes only. Permanently removes this investor and their commitments, capital entries, capital-call amounts, subscription, W-9 and other files, and portal access. It&apos;s recorded in the audit log. For a real person who just isn&apos;t investing now, use <strong>Save for future raise</strong> instead.
+          </p>
+          <div className="form-grid">
+            <label>Type <strong>{inv.display_name}</strong> to confirm<input name="confirm" required autoComplete="off" /></label>
+            <button className="danger" type="submit" style={{ padding: '9px 14px' }}>Delete investor</button>
+          </div>
+        </form>
       )}
     </div>
   );

@@ -2,12 +2,17 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole, CAPITAL_ROLES } from '@/lib/session';
 import { toCsv } from '@/lib/csv';
 
-type Spec = { table: string; select: string; order: string; columns: [string, string][] };
+type Spec = { table: string; select: string; order: string; columns: [string, string][]; heldOnly?: boolean };
 
 const EXPORTS: Record<string, Spec> = {
   investors: {
     table: 'investors', select: 'display_name, investor_type, email, phone, stage, accreditation_status, accreditation_verified_at, accreditation_expires_at, source, target_amount, created_at', order: 'display_name',
     columns: [['display_name', 'Investor'], ['investor_type', 'Type'], ['email', 'Email'], ['phone', 'Phone'], ['stage', 'Stage'], ['accreditation_status', 'Accreditation'], ['accreditation_verified_at', 'Verified on'], ['accreditation_expires_at', 'Expires'], ['source', 'Source'], ['target_amount', 'Target amount'], ['created_at', 'Added']],
+  },
+  'future-raise': {
+    table: 'investors', heldOnly: true, order: 'display_name',
+    select: 'display_name, investor_type, email, phone, source, accreditation_status, held_at, held_reason, first_contact_public, relationship_established_on, relationship_basis, next_follow_up',
+    columns: [['display_name', 'Contact'], ['investor_type', 'Type'], ['email', 'Email'], ['phone', 'Phone'], ['source', 'Source'], ['accreditation_status', 'Accreditation'], ['held_reason', 'Reason'], ['held_at', 'Saved on'], ['first_contact_public', 'First contact via public advertising'], ['relationship_established_on', 'Relationship established on'], ['relationship_basis', 'How we know them'], ['next_follow_up', 'Check back on']],
   },
   commitments: {
     table: 'commitments', select: 'amount, status, signed_at, created_at, investors(display_name), funds(name)', order: 'created_at',
@@ -39,7 +44,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ typ
   let session;
   try {
     session = await requireRole([...CAPITAL_ROLES, 'accountant']); // also enforces two-factor when it applies
-    if (session.role === 'accountant' && type === 'subscriptions') throw new Error('Not available to the accountant role');
+    if (session.role === 'accountant' && (type === 'subscriptions' || type === 'future-raise')) throw new Error('Not available to the accountant role');
   } catch (e) {
     return new NextResponse(e instanceof Error ? e.message : 'Not allowed', { status: 403 });
   }
@@ -47,7 +52,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ typ
 
   const rows: Record<string, unknown>[] = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase.from(spec.table).select(spec.select).eq('organization_id', orgId).order(spec.order).range(from, from + 999);
+    let q = supabase.from(spec.table).select(spec.select).eq('organization_id', orgId);
+    if (spec.heldOnly) q = q.not('held_at', 'is', null);
+    const { data, error } = await q.order(spec.order).range(from, from + 999);
     if (error) return new NextResponse(error.message, { status: 500 });
     rows.push(...((data ?? []) as unknown as Record<string, unknown>[]));
     if (!data || data.length < 1000) break;

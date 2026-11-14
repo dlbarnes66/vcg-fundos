@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { requireRole, WRITE_ROLES, CAPITAL_ROLES } from '@/lib/session';
 import { parseAmount } from '@/lib/money';
 import { back, errorText } from '@/lib/flash';
-import { STAGES, stageLabel } from '@/lib/labels';
+import { STAGES, stageLabel, HOLD_LABELS } from '@/lib/labels';
 import { signInLink, sendInviteEmail, type InviteState } from '@/lib/invite';
 
 const str = (f: FormData, k: string) => {
@@ -195,4 +195,81 @@ export async function sendPortalLink(investorId: string, _prev: InviteState): Pr
   } catch (e) {
     return { error: errorText(e) };
   }
+}
+
+const HOLD_REASONS = ['not_accredited', 'could_not_verify', 'not_now', 'other'];
+
+/** Keep a contact for a later 506(b) raise: off the 506(c) pipeline, with the relationship facts counsel needs. */
+export async function holdForFutureRaise(id: string, formData: FormData) {
+  let err: string | undefined;
+  try {
+    const { supabase, user, orgId } = await requireRole(WRITE_ROLES);
+    const reason = str(formData, 'held_reason');
+    if (!reason || !HOLD_REASONS.includes(reason)) throw new Error('Choose a reason');
+    const pub = str(formData, 'first_contact_public');
+    const since = str(formData, 'relationship_established_on');
+    if (since && since > new Date().toISOString().slice(0, 10)) throw new Error('The relationship date cannot be in the future');
+    const { data: before } = await supabase.from('investors').select('held_at').eq('id', id).single();
+    const { error } = await supabase
+      .from('investors')
+      .update({
+        held_at: before?.held_at ?? new Date().toISOString(),
+        held_reason: reason,
+        stage: 'declined',
+        next_follow_up: str(formData, 'next_follow_up'),
+        first_contact_public: pub === 'yes' ? true : pub === 'no' ? false : null,
+        relationship_established_on: since,
+        relationship_basis: str(formData, 'relationship_basis'),
+      })
+      .eq('id', id);
+    if (error) throw error;
+    if (!before?.held_at) {
+      await supabase.from('investor_activities').insert({
+        organization_id: orgId, investor_id: id, kind: 'stage_change', created_by: user.id,
+        body: `Moved to the future raise (506(b)) list: ${HOLD_LABELS[reason]}`,
+      });
+    }
+  } catch (e) {
+    err = errorText(e);
+  }
+  revalidatePath('/investors');
+  back(`/investors/${id}`, err ? 'error' : 'ok', err ?? 'Saved to the future raise list.');
+}
+
+export async function returnToPipeline(id: string) {
+  let err: string | undefined;
+  try {
+    const { supabase, user, orgId } = await requireRole(WRITE_ROLES);
+    const { error } = await supabase.from('investors').update({ held_at: null, held_reason: null, stage: 'qualified' }).eq('id', id);
+    if (error) throw error;
+    await supabase.from('investor_activities').insert({
+      organization_id: orgId, investor_id: id, kind: 'stage_change', created_by: user.id,
+      body: 'Moved from the future raise list back to the pipeline (Qualified)',
+    });
+  } catch (e) {
+    err = errorText(e);
+  }
+  revalidatePath('/investors');
+  back(`/investors/${id}`, err ? 'error' : 'ok', err ?? 'Back in the pipeline as Qualified.');
+}
+
+/** Owner only: permanently delete a test or mistaken investor and everything attached, including files. */
+export async function deleteInvestor(id: string, formData: FormData) {
+  let err: string | undefined;
+  let name = '';
+  try {
+    const { supabase, orgId } = await requireRole(['owner']);
+    const { data: docs } = await supabase.from('documents').select('storage_path').eq('investor_id', id);
+    const { data: inv } = await supabase.from('investors').select('display_name').eq('id', id).single();
+    name = inv?.display_name ?? '';
+    const { error } = await supabase.rpc('delete_investor_record', { p_org: orgId, p_investor: id, p_confirm: String(formData.get('confirm') ?? '').trim() });
+    if (error) throw error;
+    const paths = (docs ?? []).map((d) => d.storage_path);
+    if (paths.length) await supabase.storage.from('documents').remove(paths);
+  } catch (e) {
+    err = errorText(e);
+  }
+  if (err) back(`/investors/${id}`, 'error', err);
+  revalidatePath('/', 'layout');
+  back('/investors', 'ok', `Deleted ${name} and their records.`);
 }

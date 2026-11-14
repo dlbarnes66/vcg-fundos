@@ -28,7 +28,7 @@ Internal fund-management platform for Venture Collective Group, built multi-tena
 ## Setup (about 15 minutes)
 
 1. **Create a new Supabase project** for this app. Don't reuse the vcgnow portal project; keep investor financial data separate.
-2. **Run the schema.** Supabase → SQL Editor → run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_crm_handoff.sql`, `0003_team_and_funds.sql`, `0004_document_studio.sql`, `0005_investor_onboarding.sql`, `0006_mfa_notify_cleanup.sql`, `0007_counsel_role.sql`, `0008_counsel_review.sql`, `0009_compliance_tracking.sql`, `0010_lpa_category.sql`, `0011_capital_calls.sql`, `0012_accountant_role.sql` (run it by itself first), `0013_accountant_access.sql`). Then run `supabase/seed.sql` (this only defines the demo function).
+2. **Run the schema.** Supabase → SQL Editor → run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_crm_handoff.sql`, `0003_team_and_funds.sql`, `0004_document_studio.sql`, `0005_investor_onboarding.sql`, `0006_mfa_notify_cleanup.sql`, `0007_counsel_role.sql`, `0008_counsel_review.sql`, `0009_compliance_tracking.sql`, `0010_lpa_category.sql`, `0011_capital_calls.sql`, `0012_accountant_role.sql` (run it by itself first), `0013_accountant_access.sql`, `0014_cleanup_and_future_raise.sql`). Then run `supabase/seed.sql` (this only defines the demo function).
 3. **Create your login.** Authentication → Users → Add user (email + password, auto-confirm).
 4. **Make yourself owner.** In the SQL editor:
    ```sql
@@ -95,6 +95,8 @@ curl -X POST "$FUNDOS_URL/api/intake" \
 
 ## Counsel review, audit log and exports
 
+- **Future raise (506(b)) list:** on an investor's page, **Save for future raise** takes someone who can't join the 506(c) (not accredited, couldn't verify, not ready) off the pipeline and keeps them as a contact. Record whether they first came through public advertising and when and how a substantive relationship was established. SEC Rule 152 makes that the deciding fact for a later 506(b). See **Pipeline → Future raise**, with a CSV for counsel.
+- **Deleting test data:** Settings → *Clear sample data* removes every `@example.com` investor, including their capital-call amounts, compliance reminders and files. For one test record (such as your own test login), the owner can use **Delete this investor** at the bottom of that investor's page (type the name to confirm). Both are in the audit log.
 - **Accountant / CPA:** invite your CPA from **Team** with the role *Accountant / CPA*. They sign in to a separate **Fund books** area: read-only capital accounts, transactions, commitments and capital calls; CSV exports; the audit log; each investor's W-9; and a K-1 upload per investor per tax year (goes only to that investor's portal, with an email if set up). They never see the pipeline, notes, Document Studio, wire instructions or accreditation files, and cannot post money or edit records. Two-factor applies when you require it for staff.
 
 - **Outside counsel:** invite your attorney from **Team** with the role *Outside counsel*. They sign in to a separate review area showing only fund terms, Document Studio drafts, consistency checks and offering documents, never investors, commitments, capital or wire instructions. They can comment on any section, download Word, and **approve a version under their own login** (blocked while anything is empty or flagged). Comments also appear on the Studio page for your team.

@@ -17,7 +17,7 @@ await db.exec(`
   alter table storage.objects enable row level security;
   create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name, '/') $$;
 `);
-for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql', '0006_mfa_notify_cleanup.sql', '0007_counsel_role.sql', '0008_counsel_review.sql', '0009_compliance_tracking.sql', '0010_lpa_category.sql', '0011_capital_calls.sql', '0012_accountant_role.sql', '0013_accountant_access.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
+for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql', '0006_mfa_notify_cleanup.sql', '0007_counsel_role.sql', '0008_counsel_review.sql', '0009_compliance_tracking.sql', '0010_lpa_category.sql', '0011_capital_calls.sql', '0012_accountant_role.sql', '0013_accountant_access.sql', '0014_cleanup_and_future_raise.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
 await db.exec(readFileSync(`${root}/supabase/seed.sql`, 'utf8'));
 
 const owner = '11111111-1111-1111-1111-111111111111';
@@ -467,3 +467,37 @@ await as(owner, `select set_require_staff_mfa('${vcgOrg}', true)`, 'aal2');
 ok((await as(cpa, `select * from capital_transactions`)).rows.length === 0, 'when two-factor is required, CPA sees nothing without it');
 ok((await as(cpa, `select * from capital_transactions`, 'aal2')).rows.length > 0, 'and sees the books with two-factor');
 await as(owner, `select set_require_staff_mfa('${vcgOrg}', false)`, 'aal2');
+
+// ── Clean-up with capital calls and compliance; one-at-a-time delete ──
+const smp = (await db.query(`insert into investors (organization_id,display_name,email,accreditation_status,home_state) values ('${vcgOrg}','Sample Z','z@example.com','verified','SC') returning id`)).rows[0].id;
+await as(owner, `insert into commitments (organization_id,fund_id,investor_id,amount,status,signed_at) values ('${vcgOrg}','${fund3}','${smp}',50000,'accepted','2026-10-08')`, 'aal2');
+ok((await db.query(`select 1 from compliance_items where fund_id='${fund3}' and state='SC'`)).rows.length === 1, 'sample commitment created an SC reminder');
+const callBefore = (await db.query(`select total_amount from capital_calls where id='${callId}'`)).rows[0].total_amount;
+await db.exec(`update capital_calls set total_amount = total_amount + 1000 where id='${callId}'`);
+await db.exec(`insert into capital_call_allocations (organization_id,call_id,investor_id,unfunded_basis,amount) values ('${vcgOrg}','${callId}','${smp}',50000,1000)`);
+const soloCall = (await db.query(`insert into capital_calls (organization_id,fund_id,call_number,call_date,due_date,total_amount,purpose) values ('${vcgOrg}','${fund3}',99,current_date,current_date+5,500,'Sample only') returning id`)).rows[0].id;
+await db.exec(`insert into capital_call_allocations (organization_id,call_id,investor_id,unfunded_basis,amount) values ('${vcgOrg}','${soloCall}','${smp}',50000,500)`);
+threw = false; try { await as(owner, `select remove_investors('${vcgOrg}', array['${smp}']::uuid[])`, 'aal2'); } catch { threw = true; }
+ok(threw, 'internal remove function cannot be called directly');
+ok((await as(owner, `select purge_demo_data('${vcgOrg}','DELETE DEMO DATA') n`, 'aal2')).rows[0].n === 1, 'purge works when a sample investor is in a capital call');
+ok((await db.query(`select total_amount from capital_calls where id='${callId}'`)).rows[0].total_amount === callBefore, 'shared call shrinks back to the real investors');
+ok((await db.query(`select 1 from capital_calls where id='${soloCall}'`)).rows.length === 0, 'call with only sample investors is removed');
+ok((await db.query(`select 1 from compliance_items where fund_id='${fund3}' and state='SC'`)).rows.length === 0, 'reminder from the sample investor is removed');
+ok((await db.query(`select 1 from compliance_items where fund_id='${fund3}' and kind='form_d_initial'`)).rows.length === 1, 'Form D stays while real investors remain');
+
+const testInv = (await db.query(`insert into investors (organization_id,display_name,email) values ('${vcgOrg}','My Test Login','me@gmail.com') returning id`)).rows[0].id;
+threw = false; try { await as(owner, `select delete_investor_record('${vcgOrg}','${testInv}','wrong name')`, 'aal2'); } catch { threw = true; }
+ok(threw, 'single delete needs the exact name');
+threw = false; try { await as(adm, `select delete_investor_record('${vcgOrg}','${testInv}','My Test Login')`, 'aal2'); } catch { threw = true; }
+ok(threw, 'admin cannot delete an investor');
+await as(owner, `select delete_investor_record('${vcgOrg}','${testInv}','My Test Login')`, 'aal2');
+ok((await db.query(`select 1 from investors where id='${testInv}'`)).rows.length === 0, 'owner can delete a test investor');
+ok((await db.query(`select 1 from audit_events where action='delete_investor' and detail->>'name'='My Test Login'`)).rows.length === 1, 'single delete is in the audit log');
+
+// ── Future raise (506(b)) list ──
+const hold = (await db.query(`insert into investors (organization_id,display_name,email) values ('${vcgOrg}','Not Yet Accredited','nya@real.com') returning id`)).rows[0].id;
+await as(ir, `update investors set held_at=now(), held_reason='not_accredited', stage='declined', first_contact_public=false, relationship_established_on='2026-11-01', relationship_basis='Met at VFW post; reviewed finances by phone' where id='${hold}'`);
+ok((await db.query(`select held_reason from investors where id='${hold}'`)).rows[0].held_reason === 'not_accredited', 'IR can save a contact for a future raise');
+threw = false; try { await as(ir, `update investors set held_reason='bogus' where id='${hold}'`); } catch { threw = true; }
+ok(threw, 'unknown hold reason rejected');
+ok((await as(ncUser, `select 1 from investors where id='${hold}'`)).rows.length === 0, 'other investors cannot see future-raise contacts');

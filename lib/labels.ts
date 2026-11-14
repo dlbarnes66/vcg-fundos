@@ -77,3 +77,11 @@ export const US_STATES: [string, string][] = [
   ['SD', 'South Dakota'], ['TN', 'Tennessee'], ['TX', 'Texas'], ['UT', 'Utah'], ['VT', 'Vermont'], ['VA', 'Virginia'],
   ['WA', 'Washington'], ['WV', 'West Virginia'], ['WI', 'Wisconsin'], ['WY', 'Wyoming'],
 ];
+
+/** Why a contact was moved off the 506(c) pipeline to the future raise (506(b)) list. */
+export const HOLD_LABELS: Record<string, string> = {
+  not_accredited: 'Not accredited',
+  could_not_verify: 'Could not verify accreditation',
+  not_now: 'Interested, not ready now',
+  other: 'Other',
+};
