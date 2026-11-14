@@ -17,7 +17,7 @@ await db.exec(`
   alter table storage.objects enable row level security;
   create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name, '/') $$;
 `);
-for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql', '0006_mfa_notify_cleanup.sql', '0007_counsel_role.sql', '0008_counsel_review.sql', '0009_compliance_tracking.sql', '0010_lpa_category.sql', '0011_capital_calls.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
+for (const m of ['0001_init.sql', '0002_crm_handoff.sql', '0003_team_and_funds.sql', '0004_document_studio.sql', '0005_investor_onboarding.sql', '0006_mfa_notify_cleanup.sql', '0007_counsel_role.sql', '0008_counsel_review.sql', '0009_compliance_tracking.sql', '0010_lpa_category.sql', '0011_capital_calls.sql', '0012_accountant_role.sql', '0013_accountant_access.sql']) await db.exec(readFileSync(`${root}/supabase/migrations/${m}`, 'utf8'));
 await db.exec(readFileSync(`${root}/supabase/seed.sql`, 'utf8'));
 
 const owner = '11111111-1111-1111-1111-111111111111';
@@ -436,3 +436,34 @@ threw = false; try { await as(owner, `insert into capital_transactions (organiza
 ok(threw, 'cannot link funding from an investor not in the call');
 threw = false; try { await as(owner, `select cancel_capital_call('${callId}')`, 'aal2'); } catch { threw = true; }
 ok(threw, 'cannot cancel a call that has received funds');
+
+// ── Accountant / CPA ──
+const cpa = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+await db.exec(`insert into auth.users (id,email) values ('${cpa}','cpa@firm.com')`);
+await as(owner, `select add_staff_member('${vcgOrg}','cpa@firm.com','accountant')`, 'aal2');
+ok((await as(cpa, `select * from capital_transactions`)).rows.length > 0, 'CPA can read capital transactions');
+ok((await as(cpa, `select * from capital_accounts`)).rows.length > 0, 'CPA can read capital accounts');
+ok((await as(cpa, `select * from capital_call_allocations`)).rows.length > 0, 'CPA can read capital call allocations');
+await db.exec(`insert into documents (organization_id,investor_id,title,category,visibility,storage_path) values ('${vcgOrg}','${ncInv}','W-9','tax','investor','${vcgOrg}/lp/${ncInv}/w9-nc.pdf')`);
+ok((await as(cpa, `select * from documents where category='tax'`)).rows.length > 0, 'CPA can read W-9s');
+ok((await as(cpa, `select * from fund_wire_instructions`)).rows.length === 0, 'CPA cannot see wire instructions');
+ok((await as(cpa, `select * from investor_activities`)).rows.length === 0, 'CPA cannot see pipeline notes');
+ok((await as(cpa, `select * from doc_drafts`)).rows.length === 0, 'CPA cannot see Document Studio');
+ok((await as(cpa, `select * from intake_keys`)).rows.length === 0, 'CPA cannot see API keys');
+ok((await as(cpa, `select * from documents where category in ('general','accreditation')`)).rows.length === 0, 'CPA cannot see general or accreditation files');
+threw = false; try { await as(cpa, `insert into capital_transactions (organization_id,fund_id,investor_id,kind,amount,effective_date,posted_by) values ('${vcgOrg}','${fund3}','${ncInv}','contribution',1,current_date,'${cpa}')`); } catch { threw = true; }
+ok(threw, 'CPA cannot post money');
+threw = false; try { await as(cpa, `update investors set display_name='x' where id='${ncInv}'`); } catch { threw = true; }
+ok((await db.query(`select display_name from investors where id='${ncInv}'`)).rows[0].display_name === 'NC Investor', 'CPA cannot edit investors');
+await as(cpa, `insert into storage.objects (bucket_id,name) values ('documents','${vcgOrg}/tax/k1-2026-nc.pdf')`);
+await as(cpa, `insert into documents (organization_id,investor_id,title,category,visibility,storage_path,uploaded_by) values ('${vcgOrg}','${ncInv}','Schedule K-1 (2026)','tax','investor','${vcgOrg}/tax/k1-2026-nc.pdf','${cpa}')`);
+ok((await as(ncUser, `select title from documents where title='Schedule K-1 (2026)'`)).rows.length === 1, 'K-1 uploaded by CPA reaches that investor');
+ok((await as(ncUser, `select 1 from documents d join storage.objects o on o.name=d.storage_path where d.title='Schedule K-1 (2026)'`)).rows.length === 1, 'investor can open the K-1 file');
+threw = false; try { await as(cpa, `insert into documents (organization_id,title,category,visibility,storage_path,uploaded_by) values ('${vcgOrg}','Fake PPM','offering','all_investors','${vcgOrg}/tax/x.pdf','${cpa}')`); } catch { threw = true; }
+ok(threw, 'CPA cannot publish offering documents to investors');
+threw = false; try { await as(cpa, `insert into storage.objects (bucket_id,name) values ('documents','${vcgOrg}/ppm-new.pdf')`); } catch { threw = true; }
+ok(threw, 'CPA can only upload into the tax folder');
+await as(owner, `select set_require_staff_mfa('${vcgOrg}', true)`, 'aal2');
+ok((await as(cpa, `select * from capital_transactions`)).rows.length === 0, 'when two-factor is required, CPA sees nothing without it');
+ok((await as(cpa, `select * from capital_transactions`, 'aal2')).rows.length > 0, 'and sees the books with two-factor');
+await as(owner, `select set_require_staff_mfa('${vcgOrg}', false)`, 'aal2');

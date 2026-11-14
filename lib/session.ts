@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 
-export type Role = 'owner' | 'admin' | 'investor_relations' | 'viewer' | 'investor' | 'counsel';
+export type Role = 'owner' | 'admin' | 'investor_relations' | 'viewer' | 'investor' | 'counsel' | 'accountant';
 
 export const STAFF_ROLES: Role[] = ['owner', 'admin', 'investor_relations', 'viewer'];
 export const WRITE_ROLES: Role[] = ['owner', 'admin', 'investor_relations'];
@@ -57,7 +57,7 @@ export async function requireRole(roles: Role[]) {
   if (!roles.includes(s.role)) throw new Error('You do not have permission to do that.');
   // Same two-factor rule as the pages: no actions on a password-only session when two-factor applies.
   const { data: aal } = await s.supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-  if (aal && aal.currentLevel !== 'aal2' && (aal.nextLevel === 'aal2' || (s.requireStaffMfa && STAFF_ROLES.includes(s.role)))) {
+  if (aal && aal.currentLevel !== 'aal2' && (aal.nextLevel === 'aal2' || (s.requireStaffMfa && (STAFF_ROLES.includes(s.role) || s.role === 'accountant')))) {
     throw new Error('Verify your two-factor code first (sign out and back in).');
   }
   return s;
@@ -67,5 +67,17 @@ export async function requireRole(roles: Role[]) {
 export async function requireCounsel() {
   const s = await getSession();
   if (s.role !== 'counsel') redirect('/');
+  return s;
+}
+
+/** Accountant / CPA: books, tax documents and exports only. Follows the org's two-factor rule. */
+export async function requireAccountant() {
+  const s = await getSession();
+  if (s.role !== 'accountant') redirect('/');
+  const { data: aal } = await s.supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal && aal.currentLevel !== 'aal2') {
+    if (aal.nextLevel === 'aal2') redirect('/mfa?next=/books');
+    if (s.requireStaffMfa) redirect('/account/security?required=1');
+  }
   return s;
 }

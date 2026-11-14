@@ -10,6 +10,7 @@ const ROLE_HELP: [string, string][] = [
   ['investor_relations', 'Pipeline, investor records, documents. Cannot post money'],
   ['viewer', 'Read-only'],
   ['counsel', 'Outside counsel: Document Studio drafts, comments and sign-off only. No investor or money data'],
+  ['accountant', 'Accountant / CPA: read-only books (capital, commitments, calls), W-9s, exports, audit log; uploads K-1s. No pipeline, drafts or wire instructions'],
 ];
 
 type Member = { user_id: string; email: string; role: string; last_sign_in_at: string | null; joined_at: string };
@@ -31,7 +32,7 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
 
   const { data, error } = await supabase.rpc('org_members', { p_org: orgId });
   const members = (data ?? []) as Member[];
-  const grantable = isOwner ? ROLE_HELP : ROLE_HELP.filter(([r]) => ['investor_relations', 'viewer', 'counsel'].includes(r));
+  const grantable = isOwner ? ROLE_HELP : ROLE_HELP.filter(([r]) => ['investor_relations', 'viewer', 'counsel', 'accountant'].includes(r));
 
   return (
     <div className="stack">

@@ -11,6 +11,7 @@ export default async function Portal({ searchParams }: { searchParams: Promise<{
   const sp = await searchParams;
   const { supabase, user, orgName, role } = await getSession();
   if (role === 'counsel') redirect('/review');
+  if (role === 'accountant') redirect('/books');
   const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
   if (aal?.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') redirect('/mfa?next=/portal');
 

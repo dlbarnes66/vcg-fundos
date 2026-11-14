@@ -38,7 +38,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ typ
   if (!spec) return new NextResponse('Unknown export', { status: 404 });
   let session;
   try {
-    session = await requireRole(CAPITAL_ROLES); // also enforces two-factor when it applies
+    session = await requireRole([...CAPITAL_ROLES, 'accountant']); // also enforces two-factor when it applies
+    if (session.role === 'accountant' && type === 'subscriptions') throw new Error('Not available to the accountant role');
   } catch (e) {
     return new NextResponse(e instanceof Error ? e.message : 'Not allowed', { status: 403 });
   }

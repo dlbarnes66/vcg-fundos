@@ -28,7 +28,7 @@ Internal fund-management platform for Venture Collective Group, built multi-tena
 ## Setup (about 15 minutes)
 
 1. **Create a new Supabase project** for this app. Don't reuse the vcgnow portal project; keep investor financial data separate.
-2. **Run the schema.** Supabase → SQL Editor → run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_crm_handoff.sql`, `0003_team_and_funds.sql`, `0004_document_studio.sql`, `0005_investor_onboarding.sql`, `0006_mfa_notify_cleanup.sql`, `0007_counsel_role.sql`, `0008_counsel_review.sql`, `0009_compliance_tracking.sql`, `0010_lpa_category.sql`, `0011_capital_calls.sql`). Then run `supabase/seed.sql` (this only defines the demo function).
+2. **Run the schema.** Supabase → SQL Editor → run each file in `supabase/migrations/` in order (`0001_init.sql`, `0002_crm_handoff.sql`, `0003_team_and_funds.sql`, `0004_document_studio.sql`, `0005_investor_onboarding.sql`, `0006_mfa_notify_cleanup.sql`, `0007_counsel_role.sql`, `0008_counsel_review.sql`, `0009_compliance_tracking.sql`, `0010_lpa_category.sql`, `0011_capital_calls.sql`, `0012_accountant_role.sql` (run it by itself first), `0013_accountant_access.sql`). Then run `supabase/seed.sql` (this only defines the demo function).
 3. **Create your login.** Authentication → Users → Add user (email + password, auto-confirm).
 4. **Make yourself owner.** In the SQL editor:
    ```sql
@@ -94,6 +94,8 @@ curl -X POST "$FUNDOS_URL/api/intake" \
 - **Who opened what:** each investor record lists the portal documents they opened (count, first and last). The data room shows which investors opened each document.
 
 ## Counsel review, audit log and exports
+
+- **Accountant / CPA:** invite your CPA from **Team** with the role *Accountant / CPA*. They sign in to a separate **Fund books** area: read-only capital accounts, transactions, commitments and capital calls; CSV exports; the audit log; each investor's W-9; and a K-1 upload per investor per tax year (goes only to that investor's portal, with an email if set up). They never see the pipeline, notes, Document Studio, wire instructions or accreditation files, and cannot post money or edit records. Two-factor applies when you require it for staff.
 
 - **Outside counsel:** invite your attorney from **Team** with the role *Outside counsel*. They sign in to a separate review area showing only fund terms, Document Studio drafts, consistency checks and offering documents, never investors, commitments, capital or wire instructions. They can comment on any section, download Word, and **approve a version under their own login** (blocked while anything is empty or flagged). Comments also appear on the Studio page for your team.
 - **Audit log** (sidebar, owners/admins): every change with who, when and what changed, filterable, exportable.

@@ -62,6 +62,7 @@ export const ROLE_LABELS: Record<string, string> = {
   viewer: 'Viewer',
   investor: 'Investor',
   counsel: 'Outside counsel',
+  accountant: 'Accountant / CPA',
 };
 
 export const US_STATES: [string, string][] = [
